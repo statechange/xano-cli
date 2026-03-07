@@ -3,14 +3,13 @@
  */
 
 import { Command } from "commander";
-import { XanoClient } from "../xano-client.js";
 import {
   buildStepListFromXray,
   getFunctionDependencies,
   getStepWarnings,
   analyzeStack,
 } from "@statechange/xano-xray";
-import { resolveXanoToken, resolveInstance, resolveWorkspace } from "../registry-client.js";
+import { makeClient } from "../registry-client.js";
 import { FORMAT_HELP, parseFormat, outputFormatted } from "../format.js";
 
 export function createXRayCommand(program: Command) {
@@ -27,35 +26,14 @@ export function createXRayCommand(program: Command) {
     .option("--api-key <key>", "StateChange API key (overrides saved key)")
     .option("--format <format>", FORMAT_HELP, "table")
     .action(async (options) => {
-      const instance = await resolveInstance({ instance: options.instance, apiKey: options.apiKey });
-      if (!instance) {
-        console.error(
-          "Error: Xano instance required (--instance or XANO_INSTANCE env var)",
-        );
-        process.exit(1);
-      }
-
-      const token = await resolveXanoToken({
-        instance,
-        token: options.token,
-        apiKey: options.apiKey,
-      });
-      if (!token) {
-        console.error(
-          "Error: Xano token required (--token, XANO_TOKEN, or StateChange backend via 'sc-xano auth init')",
-        );
-        process.exit(1);
-      }
-
-      const client = new XanoClient({ instance, token });
+      const { client, workspace: workspaceId, branchId } = await makeClient(options);
       const functionId = parseInt(options.id);
-      const workspaceId = await resolveWorkspace({ workspace: options.workspace, apiKey: options.apiKey });
       const format = parseFormat(options.format);
 
       try {
         const log = format === "table" ? console.log.bind(console) : console.error.bind(console);
         log(`Fetching function ${functionId}...`);
-        const func = await client.getFunction(functionId, workspaceId ?? undefined, parseInt(options.branch));
+        const func = await client.getFunction(functionId, workspaceId ?? undefined, branchId);
 
         // Build step list
         const steps = buildStepListFromXray(func);
@@ -78,7 +56,7 @@ export function createXRayCommand(program: Command) {
           try {
             const { functions } = await client.getFunctions(
               workspaceId,
-              parseInt(options.branch),
+              branchId,
             );
             const depIds = getFunctionDependencies(func, { functions });
             dependencies = Array.from(depIds).map((depId) => {
@@ -173,37 +151,8 @@ export function createXRayCommand(program: Command) {
     .option("--include-warnings", "Include warnings in output")
     .option("--format <format>", FORMAT_HELP, "table")
     .action(async (options) => {
-      const instance = await resolveInstance({ instance: options.instance, apiKey: options.apiKey });
-      if (!instance) {
-        console.error(
-          "Error: Xano instance required (--instance or XANO_INSTANCE env var)",
-        );
-        process.exit(1);
-      }
-
-      const token = await resolveXanoToken({
-        instance,
-        token: options.token,
-        apiKey: options.apiKey,
-      });
-      if (!token) {
-        console.error(
-          "Error: Xano token required (--token, XANO_TOKEN, or StateChange backend via 'sc-xano auth init')",
-        );
-        process.exit(1);
-      }
-
-      const workspace = await resolveWorkspace({ workspace: options.workspace, apiKey: options.apiKey });
-      if (!workspace) {
-        console.error(
-          "Error: Workspace ID required (--workspace or XANO_WORKSPACE env var)",
-        );
-        process.exit(1);
-      }
-
-      const branchId = parseInt(options.branch);
+      const { client, workspace, branchId } = await makeClient(options);
       const format = parseFormat(options.format);
-      const client = new XanoClient({ instance, token });
 
       try {
         const log = format === "table" ? console.log.bind(console) : console.error.bind(console);

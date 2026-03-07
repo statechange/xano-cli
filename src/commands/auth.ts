@@ -10,7 +10,7 @@ import {
   getStateChangeApiKey,
   getAuthFilePath,
 } from "../auth.js";
-import { listXanoTokens } from "../registry-client.js";
+import { listXanoTokens, checkTokenHealth, resolveInstance } from "../registry-client.js";
 
 function promptForApiKey(): Promise<string> {
   return new Promise((resolve) => {
@@ -130,6 +130,71 @@ export function createAuthCommand(program: Command) {
         console.log(`✅ Default workspace saved: ${options.workspace}`);
       }
       console.log(`   Config: ${getAuthFilePath()}`);
+    });
+
+  auth
+    .command("status")
+    .description("Check Xano token health and session freshness")
+    .option("--api-key <key>", "StateChange API key (overrides saved key)")
+    .option("--instance <host>", "Xano instance hostname")
+    .action(async (options) => {
+      const apiKey = getStateChangeApiKey({ apiKey: options.apiKey });
+      if (!apiKey) {
+        console.error("Error: No API key found. Run 'sc-xano auth init' first.");
+        process.exit(1);
+      }
+
+      try {
+        const response = await listXanoTokens(apiKey);
+        const tokens = response.tokens || [];
+
+        if (tokens.length === 0) {
+          console.log("No Xano tokens found.");
+          console.log("Open your Xano workspace with the StateChange extension to create one.");
+          return;
+        }
+
+        // If instance specified, filter to that one
+        const instance = options.instance || (await resolveInstance({ apiKey: options.apiKey }));
+        const filtered = instance
+          ? tokens.filter((t: any) => (t.instanceId || t.instance_id) === instance)
+          : tokens;
+
+        const toShow = filtered.length > 0 ? filtered : tokens;
+
+        for (const token of toShow) {
+          const health = checkTokenHealth(token);
+          const id = (token as any).instanceId || (token as any).instance_id || "unknown";
+          const name = (token as any).instanceName || (token as any).instance_name;
+          const wsId = (token as any).workspaceId || (token as any).workspace_id;
+
+          console.log(`Instance: ${name || id}`);
+          if (wsId) console.log(`  Workspace: ${wsId}`);
+
+          const statusIcon =
+            health.status === "fresh" ? "✅" :
+            health.status === "stale" ? "⚠️ " :
+            health.status === "expired" ? "❌" : "❓";
+
+          console.log(`  Token status: ${statusIcon} ${health.status}`);
+          console.log(`  Age: ${health.ageHours} hours`);
+
+          if (health.status === "fresh") {
+            console.log(`  Expires in: ${health.remainingHours} hours`);
+          } else if (health.status === "stale") {
+            console.log(`  ${health.message}`);
+            console.log(`  Open Xano with the StateChange extension to refresh.`);
+          } else if (health.status === "expired") {
+            console.log(`  ${health.message}`);
+            console.log(`  Open your Xano workspace to refresh:`);
+            console.log(`    https://app.xano.com`);
+          }
+          console.log("");
+        }
+      } catch (e: any) {
+        console.error(`Error: ${e.message}`);
+        process.exit(1);
+      }
     });
 
   return auth;

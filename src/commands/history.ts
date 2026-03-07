@@ -3,27 +3,14 @@
  */
 
 import { Command } from "commander";
-import { XanoClient } from "../xano-client.js";
-import { resolveXanoToken, resolveInstance, resolveWorkspace } from "../registry-client.js";
+import { makeClient } from "../registry-client.js";
 import { FORMAT_HELP, parseFormat, outputFormatted } from "../format.js";
-
-async function makeClient(options: any) {
-  const instance = await resolveInstance({ instance: options.instance, apiKey: options.apiKey });
-  if (!instance) {
-    console.error("Error: Xano instance required (--instance or XANO_INSTANCE env var)");
-    process.exit(1);
-  }
-  const token = await resolveXanoToken({ instance, token: options.token, apiKey: options.apiKey });
-  if (!token) {
-    console.error("Error: Xano token required (--token, XANO_TOKEN, or StateChange backend via 'sc-xano auth init')");
-    process.exit(1);
-  }
-  return { client: new XanoClient({ instance, token }) };
-}
 
 const stdOptions = (cmd: Command) =>
   cmd
     .option("--instance <instance>", "Xano instance (e.g., xq1a-abcd-1234.xano.io)")
+    .option("--workspace <workspace>", "Workspace ID")
+    .option("--branch <branch>", "Branch ID", "0")
     .option("--token <token>", "Xano API token")
     .option("--api-key <key>", "StateChange API key (overrides saved key)")
     .option("--format <format>", FORMAT_HELP, "table");
@@ -66,18 +53,11 @@ export function createHistoryCommand(program: Command) {
     history
       .command("requests")
       .description("List recent API requests for workspace")
-      .option("--workspace <workspace>", "Workspace ID")
-      .option("--branch <branch>", "Branch ID", "-1")
       .option("--page <page>", "Page number", "1")
   ).action(async (options) => {
     try {
-      const { client } = await makeClient(options);
+      const { client, workspace } = await makeClient(options);
       const format = parseFormat(options.format);
-      const workspace = await resolveWorkspace({ workspace: options.workspace, apiKey: options.apiKey });
-      if (!workspace) {
-        console.error("Error: Workspace ID required (--workspace or XANO_WORKSPACE env var)");
-        process.exit(1);
-      }
       const page = parseInt(options.page);
       const branchId = parseInt(options.branch);
 
@@ -237,14 +217,12 @@ export function createHistoryCommand(program: Command) {
       .command("triggers")
       .description("List trigger execution history")
       .argument("<trigger-id>", "Trigger ID")
-      .option("--branch <branch>", "Branch ID", "0")
       .option("--page <page>", "Page number", "1")
   ).action(async (triggerId, options) => {
     try {
-      const { client } = await makeClient(options);
+      const { client, branchId } = await makeClient(options);
       const format = parseFormat(options.format);
       const id = parseInt(triggerId);
-      const branchId = parseInt(options.branch);
       const page = parseInt(options.page);
       const result = await client.getTriggerHistory(id, branchId, page);
 
@@ -271,14 +249,12 @@ export function createHistoryCommand(program: Command) {
       .command("mcp-servers")
       .description("List MCP server execution history")
       .argument("<tool-id>", "MCP Server / Toolset ID")
-      .option("--branch <branch>", "Branch ID", "0")
       .option("--page <page>", "Page number", "1")
   ).action(async (toolId, options) => {
     try {
-      const { client } = await makeClient(options);
+      const { client, branchId } = await makeClient(options);
       const format = parseFormat(options.format);
       const id = parseInt(toolId);
-      const branchId = parseInt(options.branch);
       const page = parseInt(options.page);
       const result = await client.getMCPServerHistory(id, branchId, page);
 

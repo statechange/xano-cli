@@ -1,6 +1,6 @@
 {
   "name": "@statechange/xano-cli",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "CLI for Xano workspace management, performance analysis, XanoScript generation, and operational insights via private APIs",
   "type": "module",
   "bin": {

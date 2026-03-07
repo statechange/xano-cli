@@ -3,8 +3,7 @@
  */
 
 import { Command } from "commander";
-import { XanoClient } from "../xano-client.js";
-import { resolveXanoToken, resolveInstance } from "../registry-client.js";
+import { makeClient } from "../registry-client.js";
 
 export function createSecureCommand(program: Command) {
   const secure = program.command("secure").description("Security commands");
@@ -21,27 +20,8 @@ export function createSecureCommand(program: Command) {
     .option("--disable", "Disable Swagger entirely")
     .option("--require-token", "Require token for Swagger access")
     .action(async (options) => {
-      const instance = await resolveInstance({ instance: options.instance, apiKey: options.apiKey });
-      if (!instance) {
-        console.error("Error: Xano instance required (--instance or XANO_INSTANCE env var)");
-        process.exit(1);
-      }
-
-      const token = await resolveXanoToken({
-        instance,
-        token: options.token,
-        apiKey: options.apiKey,
-      });
-      if (!token) {
-        console.error(
-          "Error: Xano token required (--token, XANO_TOKEN, or StateChange backend via 'sc-xano auth init')"
-        );
-        process.exit(1);
-      }
-
-      const branchId = parseInt(options.branch);
+      const { client, branchId } = await makeClient(options);
       const appId = parseInt(options.appId);
-      const client = new XanoClient({ instance, token });
 
       try {
         console.log(`Fetching app ${appId}...`);

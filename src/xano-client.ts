@@ -29,10 +29,12 @@ export function flushSinkCache(key?: string) {
 export class XanoClient {
   private instance: string;
   private token: string;
+  private onTokenExpired?: () => Promise<string>;
 
-  constructor(config: XanoClientConfig) {
+  constructor(config: XanoClientConfig & { onTokenExpired?: () => Promise<string> }) {
     this.instance = config.instance;
     this.token = config.token;
+    this.onTokenExpired = config.onTokenExpired;
   }
 
   /** Flush the sink cache (call after writes) */
@@ -89,10 +91,29 @@ export class XanoClient {
             );
             currentAttempt++;
             continue;
-          } else {
+          } else if (response.status === 401 && this.onTokenExpired && currentAttempt === 0) {
+            // Token rejected — try to refresh via callback
+            try {
+              this.token = await this.onTokenExpired();
+              currentAttempt++;
+              continue;
+            } catch {
+              // Refresh failed — fall through to throw the API error
+            }
             const errorText = await response.text();
             const apiError = new Error(
-              `Xano API error: ${response.status} ${response.statusText} - ${errorText}`
+              `Xano API error: 401 Unauthorized - ${errorText}\n\nYour Xano session may have expired. Run 'sc-xano auth status' to check token health.`
+            );
+            (apiError as any).isApiError = true;
+            throw apiError;
+          } else {
+            const errorText = await response.text();
+            let hint = "";
+            if (response.status === 401 || response.status === 403) {
+              hint = `\n\nRun 'sc-xano auth status' to check your Xano session.`;
+            }
+            const apiError = new Error(
+              `Xano API error: ${response.status} ${response.statusText} - ${errorText}${hint}`
             );
             (apiError as any).isApiError = true;
             throw apiError;

@@ -3,9 +3,8 @@
  */
 
 import { Command } from "commander";
-import { XanoClient } from "../xano-client.js";
 import { generateLoadAnalysis, RequestSummary } from "../performance/load-analysis.js";
-import { resolveXanoToken, resolveInstance, resolveWorkspace } from "../registry-client.js";
+import { makeClient } from "../registry-client.js";
 import {
   buildStepListFromXray,
   getStepWarnings,
@@ -31,41 +30,11 @@ export function createPerformanceCommand(program: Command) {
     .option("--limit <limit>", "Number of results to show", "20")
     .option("--format <format>", FORMAT_HELP, "table")
     .action(async (options) => {
-      const instance = await resolveInstance({ instance: options.instance, apiKey: options.apiKey });
-      if (!instance) {
-        console.error(
-          "Error: Xano instance required (--instance or XANO_INSTANCE env var)",
-        );
-        process.exit(1);
-      }
-
-      const token = await resolveXanoToken({
-        instance,
-        token: options.token,
-        apiKey: options.apiKey,
-      });
-      if (!token) {
-        console.error(
-          "Error: Xano token required (--token, XANO_TOKEN, or StateChange backend via 'sc-xano auth init')",
-        );
-        process.exit(1);
-      }
-
-      const workspace = await resolveWorkspace({ workspace: options.workspace, apiKey: options.apiKey });
-      if (!workspace) {
-        console.error(
-          "Error: Workspace ID required (--workspace or XANO_WORKSPACE env var)",
-        );
-        process.exit(1);
-      }
-
-      const branchId = parseInt(options.branch);
+      const { client, instance, workspace, branchId } = await makeClient(options);
       const lookBackHours = parseInt(options.lookback);
       const lookBack = lookBackHours * 60 * 60 * 1000;
       const limit = parseInt(options.limit);
       const format = parseFormat(options.format);
-
-      const client = new XanoClient({ instance, token });
 
       try {
         // Only show progress to stderr for non-table formats so stdout stays clean
@@ -179,38 +148,9 @@ export function createPerformanceCommand(program: Command) {
     .option("--min-nesting <level>", "Minimum nesting level to report", "2")
     .option("--format <format>", FORMAT_HELP, "table")
     .action(async (options) => {
-      const instance = await resolveInstance({ instance: options.instance, apiKey: options.apiKey });
-      if (!instance) {
-        console.error(
-          "Error: Xano instance required (--instance or XANO_INSTANCE env var)",
-        );
-        process.exit(1);
-      }
-
-      const token = await resolveXanoToken({
-        instance,
-        token: options.token,
-        apiKey: options.apiKey,
-      });
-      if (!token) {
-        console.error(
-          "Error: Xano token required (--token, XANO_TOKEN, or StateChange backend via 'sc-xano auth init')",
-        );
-        process.exit(1);
-      }
-
-      const workspace = await resolveWorkspace({ workspace: options.workspace, apiKey: options.apiKey });
-      if (!workspace) {
-        console.error(
-          "Error: Workspace ID required (--workspace or XANO_WORKSPACE env var)",
-        );
-        process.exit(1);
-      }
-
-      const branchId = parseInt(options.branch);
+      const { client, workspace, branchId } = await makeClient(options);
       const minNesting = parseInt(options.minNesting || "2");
       const format = parseFormat(options.format);
-      const client = new XanoClient({ instance, token });
 
       try {
         const log = format === "table"
@@ -322,20 +262,8 @@ export function createPerformanceCommand(program: Command) {
     .option("--api-key <key>", "StateChange API key (overrides saved key)")
     .option("--format <format>", FORMAT_HELP, "table")
     .action(async (requestId, options) => {
-      const instance = await resolveInstance({ instance: options.instance, apiKey: options.apiKey });
-      if (!instance) {
-        console.error("Error: Xano instance required (--instance or XANO_INSTANCE env var)");
-        process.exit(1);
-      }
-      const token = await resolveXanoToken({ instance, token: options.token, apiKey: options.apiKey });
-      if (!token) {
-        console.error("Error: Xano token required (--token, XANO_TOKEN, or StateChange backend via 'sc-xano auth init')");
-        process.exit(1);
-      }
-      const workspace = await resolveWorkspace({ workspace: options.workspace, apiKey: options.apiKey });
-      const branchId = parseInt(options.branch);
+      const { client, workspace, branchId } = await makeClient(options);
       const format = parseFormat(options.format);
-      const client = new XanoClient({ instance, token });
 
       try {
         const log = format === "table" ? console.log.bind(console) : console.error.bind(console);
@@ -427,21 +355,9 @@ export function createPerformanceCommand(program: Command) {
         process.exit(1);
       }
 
-      const instance = await resolveInstance({ instance: options.instance, apiKey: options.apiKey });
-      if (!instance) {
-        console.error("Error: Xano instance required (--instance or XANO_INSTANCE env var)");
-        process.exit(1);
-      }
-      const token = await resolveXanoToken({ instance, token: options.token, apiKey: options.apiKey });
-      if (!token) {
-        console.error("Error: Xano token required (--token, XANO_TOKEN, or StateChange backend via 'sc-xano auth init')");
-        process.exit(1);
-      }
-      const workspace = await resolveWorkspace({ workspace: options.workspace, apiKey: options.apiKey });
-      const branchId = parseInt(options.branch);
+      const { client, workspace, branchId } = await makeClient(options);
       const maxSamples = parseInt(options.samples);
       const format = parseFormat(options.format);
-      const client = new XanoClient({ instance, token });
       const objectId = parseInt(id);
 
       try {

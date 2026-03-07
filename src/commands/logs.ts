@@ -4,28 +4,8 @@
 
 import { Command } from "commander";
 import { XanoClient } from "../xano-client.js";
-import { resolveXanoToken, resolveInstance, resolveWorkspace } from "../registry-client.js";
+import { makeClient } from "../registry-client.js";
 import { FORMAT_HELP, parseFormat, outputFormatted, toYaml } from "../format.js";
-
-async function makeClient(options: any) {
-  const instance = await resolveInstance({ instance: options.instance, apiKey: options.apiKey });
-  if (!instance) {
-    console.error("Error: Xano instance required (--instance or XANO_INSTANCE env var)");
-    process.exit(1);
-  }
-  const token = await resolveXanoToken({ instance, token: options.token, apiKey: options.apiKey });
-  if (!token) {
-    console.error("Error: Xano token required (--token, XANO_TOKEN, or StateChange backend via 'sc-xano auth init')");
-    process.exit(1);
-  }
-  const workspace = await resolveWorkspace({ workspace: options.workspace, apiKey: options.apiKey });
-  if (!workspace) {
-    console.error("Error: Workspace ID required (--workspace or XANO_WORKSPACE env var)");
-    process.exit(1);
-  }
-  const branchId = parseInt(options.branch || "0");
-  return { client: new XanoClient({ instance, token }), workspace, branchId };
-}
 
 const stdOptions = (cmd: Command) =>
   cmd
