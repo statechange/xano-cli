@@ -23,7 +23,7 @@ const program = new Command();
 program
   .name("sc-xano")
   .description("StateChange CLI for Xano - workspace management, performance analysis, and operational insights")
-  .version("0.2.1");
+  .version("0.2.2");
 
 // Add subcommands
 createAuthCommand(program);
