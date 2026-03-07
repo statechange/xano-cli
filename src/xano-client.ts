@@ -172,6 +172,46 @@ export class XanoClient {
     });
   }
 
+  // Query (endpoint) methods
+  async getQuery(queryId: number) {
+    return this.fetchJson(`api:mvp-admin/query/${queryId}`);
+  }
+
+  async updateQuery(query: any) {
+    this.flushCache();
+    return this.fetchJson(`api:mvp-admin/query/${query.id}`, {
+      method: "POST",
+      body: JSON.stringify({
+        data: query,
+        last_updated_at: query.updated_at,
+      }),
+    });
+  }
+
+  // Task update
+  async updateTask(task: any) {
+    this.flushCache();
+    return this.fetchJson(`api:mvp-admin/task/${task.id}`, {
+      method: "POST",
+      body: JSON.stringify({
+        data: task,
+        last_updated_at: task.updated_at,
+      }),
+    });
+  }
+
+  // Trigger update
+  async updateTrigger(trigger: any) {
+    this.flushCache();
+    return this.fetchJson(`api:mvp-admin/trigger/${trigger.id}`, {
+      method: "POST",
+      body: JSON.stringify({
+        data: trigger,
+        last_updated_at: trigger.updated_at,
+      }),
+    });
+  }
+
   // History methods
   async getRequestHistory(
     workspaceId: number,
