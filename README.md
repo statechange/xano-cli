@@ -6,13 +6,23 @@
 
 CLI for Xano workspace management, performance analysis, XanoScript generation, and operational insights. Uses Xano's private APIs to provide capabilities not available through the standard Meta API.
 
+## Getting Started with AI Agents
+
+The fastest way to put this CLI to work is to install the skills into your AI coding agent:
+
+```bash
+npx skills add @statechange/xano-cli
+```
+
+This teaches your agent (Claude Code, Cursor, etc.) how to manage your Xano workspace, analyze performance bottlenecks, trace slow endpoints, and generate XanoScript — all through natural conversation.
+
 ## Installation
 
 ```bash
 npm install -g @statechange/xano-cli
 ```
 
-Or run directly with npx:
+Or run directly with npx (no install needed):
 
 ```bash
 npx @statechange/xano-cli <command>
@@ -237,18 +247,6 @@ This CLI uses Xano's private `api:mvp-admin` endpoints (the same APIs that power
 | XanoScript validation | No | Yes |
 | XanoScript docs | No | Yes |
 | Meta API docs | No | Yes |
-
-## AI Integration
-
-The recommended way to use this CLI with AI coding assistants is to install the skills:
-
-```bash
-npx skills add @statechange/xano-cli
-```
-
-This teaches your AI agent how to use the CLI for workspace management and performance analysis workflows. Skills are included in the `skills/` directory of the package.
-
-For manual use, add `--format yaml` to any command for the most token-efficient structured output.
 
 ## License
 
