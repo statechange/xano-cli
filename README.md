@@ -1,5 +1,9 @@
 # @statechange/xano-cli
 
+[![npm version](https://img.shields.io/npm/v/@statechange/xano-cli.svg)](https://www.npmjs.com/package/@statechange/xano-cli)
+[![npm downloads](https://img.shields.io/npm/dm/@statechange/xano-cli.svg)](https://www.npmjs.com/package/@statechange/xano-cli)
+[![license](https://img.shields.io/npm/l/@statechange/xano-cli.svg)](https://github.com/statechange/xano-cli/blob/main/LICENSE)
+
 CLI for Xano workspace management, performance analysis, XanoScript generation, and operational insights. Uses Xano's private APIs to provide capabilities not available through the standard Meta API.
 
 ## Installation
