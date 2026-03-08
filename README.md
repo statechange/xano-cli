@@ -9,7 +9,7 @@ CLI for Xano performance analysis, operational insights, and critical security a
 ### Requirements
 
 - A [State Change](https://statechange.ai) subscription
-- The [State Change browser extension](https://chromewebstore.google.com/detail/statechange-power-tools-f/jgednopabapolfhfbgipkkigkafnlmla) installed and active in Chrome
+- The [State Change browser extension](https://chromewebstore.google.com/detail/statechange-power-tools-f/jgednopabapolfhfbgipkkigkafnlmla) installed and having previously been active on your instance in Chrome (or a supported browser)
 
 ## Getting Started with AI Agents
 
