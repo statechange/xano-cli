@@ -4,9 +4,12 @@
 [![npm downloads](https://img.shields.io/npm/dm/@statechange/xano-cli.svg)](https://www.npmjs.com/package/@statechange/xano-cli)
 [![license](https://img.shields.io/npm/l/@statechange/xano-cli.svg)](https://github.com/statechange/xano-cli/blob/main/LICENSE)
 
-CLI for Xano performance analysis, operational insights, and critical security and restart abilities. Provides capabilities offered in the State Change Extension for Xano.
+CLI for Xano performance analysis, operational insights, and critical security and restart abilities. Provides capabilities offered in the [State Change Extension for Xano](https://chromewebstore.google.com/detail/statechange-power-tools-f/jgednopabapolfhfbgipkkigkafnlmla).
 
-This CLI requires a State Change subscription to work.
+### Requirements
+
+- A [State Change](https://statechange.ai) subscription
+- The [State Change browser extension](https://chromewebstore.google.com/detail/statechange-power-tools-f/jgednopabapolfhfbgipkkigkafnlmla) installed and active in Chrome
 
 ## Getting Started with AI Agents
 

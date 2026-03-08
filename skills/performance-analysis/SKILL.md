@@ -5,7 +5,7 @@ description: Analyze and optimize Xano workspace performance. Use when the user 
 
 # Xano Performance Analysis
 
-Requires the `sc-xano` CLI to be authenticated (see the `sc-xano` skill).
+**Requires:** A [State Change](https://statechange.ai) subscription, the [State Change browser extension](https://chromewebstore.google.com/detail/statechange-power-tools-f/jgednopabapolfhfbgipkkigkafnlmla) installed in Chrome, and the `sc-xano` CLI to be authenticated (see the `sc-xano` skill).
 
 ## Workflow: "Why is my workspace slow?"
 

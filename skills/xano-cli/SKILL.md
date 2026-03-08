@@ -7,6 +7,8 @@ description: Interact with Xano workspaces via the StateChange CLI. Use when the
 
 Run commands with `npx @statechange/xano-cli <command>` (or `sc-xano` if installed globally).
 
+**Requires:** A [State Change](https://statechange.ai) subscription and the [State Change browser extension](https://chromewebstore.google.com/detail/statechange-power-tools-f/jgednopabapolfhfbgipkkigkafnlmla) installed in Chrome.
+
 Once authenticated, instance/workspace/token auto-resolve. No extra flags needed for single-instance users.
 
 ## Authentication
