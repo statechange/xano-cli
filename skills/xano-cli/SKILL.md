@@ -102,7 +102,6 @@ npx @statechange/xano-cli xanoscript generate function <id>
 npx @statechange/xano-cli xanoscript generate table <id>
 npx @statechange/xano-cli xanoscript generate api <id>
 npx @statechange/xano-cli xanoscript export-all --type function
-npx @statechange/xano-cli xanoscript convert myfunction.xs
 ```
 
 ### Instance Health (Master API)

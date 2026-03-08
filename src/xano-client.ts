@@ -449,50 +449,6 @@ export class XanoClient {
     return { status: "error", payload: { message: "Failed to generate XanoScript", doIgnore: true } };
   }
 
-  // XanoScript conversion with 429 rate-limit retry
-  async convertXanoScript(
-    workspaceId: number,
-    script: string
-  ): Promise<{ status: string; payload: any }> {
-    const body = JSON.stringify({ script, type: "xs" });
-    const maxRetries = 5;
-    const baseDelay = 1000;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const response = await this.fetch(
-        `api:mvp-admin/workspace/${workspaceId}/script/convert`,
-        { method: "POST", body }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        return { status: "success", payload: result };
-      }
-
-      if (response.status === 429 && attempt < maxRetries) {
-        const delay = baseDelay * Math.pow(2, attempt);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        continue;
-      }
-
-      try {
-        const result = await response.json();
-        return { status: "error", payload: result };
-      } catch {
-        return {
-          status: "error",
-          payload: {
-            message: response.status === 429
-              ? `Rate limited. Failed after ${maxRetries} retries.`
-              : "Failed to convert XanoScript",
-            doIgnore: response.status !== 429,
-          },
-        };
-      }
-    }
-
-    return { status: "error", payload: { message: "Failed to convert XanoScript", doIgnore: true } };
-  }
 }
 
 /**

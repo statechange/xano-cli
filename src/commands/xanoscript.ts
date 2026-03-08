@@ -1,11 +1,11 @@
 /**
- * XanoScript CLI Commands — Generation & conversion using private API
+ * XanoScript CLI Commands — Generation using Xano API
  */
 
 import { Command } from "commander";
 import { XanoClient } from "../xano-client.js";
 import { makeClient } from "../registry-client.js";
-import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 
 const stdOptions = (cmd: Command) =>
@@ -97,7 +97,7 @@ function sanitizeFilename(name: string): string {
 }
 
 export function createXanoScriptCommand(program: Command) {
-  const xs = program.command("xanoscript").description("XanoScript generation & conversion");
+  const xs = program.command("xanoscript").description("XanoScript generation");
 
   stdOptions(
     xs
@@ -192,49 +192,6 @@ export function createXanoScriptCommand(program: Command) {
       console.log(`\nDone: ${success} exported, ${skipped} skipped, ${errors} errors`);
       if (success > 0) {
         console.log(`Output: ${outputDir}/`);
-      }
-    } catch (error: any) {
-      console.error("Error:", error.message);
-      process.exit(1);
-    }
-  });
-
-  stdOptions(
-    xs
-      .command("convert")
-      .description("Convert XanoScript (.xs file or stdin) back to Xano JSON")
-      .argument("[file]", "Path to .xs file (reads from stdin if omitted)")
-  ).action(async (file, options) => {
-    try {
-      const { client, workspace } = await makeClient(options);
-
-      let script: string;
-      if (file) {
-        script = readFileSync(file, "utf-8");
-      } else {
-        // Read from stdin
-        const chunks: Buffer[] = [];
-        for await (const chunk of process.stdin) {
-          chunks.push(chunk);
-        }
-        script = Buffer.concat(chunks).toString("utf-8");
-      }
-
-      if (!script.trim()) {
-        console.error("Error: No XanoScript input provided");
-        process.exit(1);
-      }
-
-      const result = await client.convertXanoScript(workspace, script);
-
-      if (result.status === "success") {
-        console.log(JSON.stringify(result.payload, null, 2));
-      } else if (result.payload?.message) {
-        console.error("Error:", result.payload.message);
-        process.exit(1);
-      } else {
-        console.error("Error: Conversion failed");
-        process.exit(1);
       }
     } catch (error: any) {
       console.error("Error:", error.message);

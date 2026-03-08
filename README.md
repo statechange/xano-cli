@@ -4,7 +4,9 @@
 [![npm downloads](https://img.shields.io/npm/dm/@statechange/xano-cli.svg)](https://www.npmjs.com/package/@statechange/xano-cli)
 [![license](https://img.shields.io/npm/l/@statechange/xano-cli.svg)](https://github.com/statechange/xano-cli/blob/main/LICENSE)
 
-CLI for Xano workspace management, performance analysis, XanoScript generation, and operational insights. Uses Xano's private APIs to provide capabilities not available through the standard Meta API.
+CLI for Xano performance analysis, operational insights, and critical security and restart abilities. Provides capabilities offered in the State Change Extension for Xano.
+
+This CLI requires a State Change subscription to work.
 
 ## Getting Started with AI Agents
 
@@ -14,7 +16,7 @@ The fastest way to put this CLI to work is to install the skills into your AI co
 npx skills add @statechange/xano-cli
 ```
 
-This teaches your agent (Claude Code, Cursor, etc.) how to manage your Xano workspace, analyze performance bottlenecks, trace slow endpoints, and generate XanoScript — all through natural conversation.
+This teaches your agent (Claude Code, Cursor, etc.) how to analyze performance bottlenecks, trace slow endpoints, audit security, and generate XanoScript — all through natural conversation.
 
 ## Installation
 
@@ -97,19 +99,6 @@ All commands support `--format table` (default, human-readable), `--format json`
 
 ## Commands
 
-### `inventory` — Workspace Overview
-
-```bash
-sc-xano inventory workspace           # Object counts summary
-sc-xano inventory functions            # List functions with tags
-sc-xano inventory tables               # List database tables
-sc-xano inventory tasks                # List background tasks
-sc-xano inventory triggers             # List triggers
-sc-xano inventory addons               # List addons
-sc-xano inventory middleware           # List middleware
-sc-xano inventory mcp-servers          # List MCP/toolset servers
-```
-
 ### `performance` — Performance Analysis
 
 Find slow endpoints, trace execution bottlenecks, and deep-dive into request stacks.
@@ -150,7 +139,7 @@ sc-xano xray scan-workspace
 sc-xano xray scan-workspace --include-warnings
 ```
 
-### `audit` — Workspace Auditing
+### `audit` — Security Auditing
 
 ```bash
 sc-xano audit workspace        # API configurations
@@ -204,7 +193,20 @@ sc-xano logs watch endpoint <id>
 
 Useful when performance deep-dives show `stack_truncated: true` — set the limit to unlimited, trigger a new execution, then deep-dive the untruncated result.
 
-### `xanoscript` — XanoScript Generation & Conversion
+### `inventory` — Workspace Overview
+
+```bash
+sc-xano inventory workspace           # Object counts summary
+sc-xano inventory functions            # List functions with tags
+sc-xano inventory tables               # List database tables
+sc-xano inventory tasks                # List background tasks
+sc-xano inventory triggers             # List triggers
+sc-xano inventory addons               # List addons
+sc-xano inventory middleware           # List middleware
+sc-xano inventory mcp-servers          # List MCP/toolset servers
+```
+
+### `xanoscript` — XanoScript Generation
 
 ```bash
 sc-xano xanoscript generate function <id>
@@ -213,12 +215,9 @@ sc-xano xanoscript generate api <id>
 
 sc-xano xanoscript export-all --type function
 sc-xano xanoscript export-all --type table --output-dir ./backup
-
-sc-xano xanoscript convert myfunction.xs
-cat myfunction.xs | sc-xano xanoscript convert
 ```
 
-### `health` — Instance Health (Master API)
+### `health` — Instance Health & Restarts
 
 ```bash
 sc-xano health instances
@@ -232,21 +231,6 @@ sc-xano health restart-tasks --instance-id <id>
 ```bash
 sc-xano flush     # Clear cached sink data
 ```
-
-## How It Works
-
-This CLI uses Xano's private `api:mvp-admin` endpoints (the same APIs that power the Xano dashboard) to provide operational capabilities beyond the public Meta API.
-
-| Capability | This CLI | Xano MCP |
-|-----------|----------|----------|
-| Live workspace data | Yes | No |
-| Performance analysis | Yes | No |
-| Execution history | Yes | No |
-| Log retention management | Yes | No |
-| XanoScript generation | Yes | No |
-| XanoScript validation | No | Yes |
-| XanoScript docs | No | Yes |
-| Meta API docs | No | Yes |
 
 ## License
 
