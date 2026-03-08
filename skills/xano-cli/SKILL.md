@@ -97,13 +97,23 @@ npx @statechange/xano-cli logs set endpoint <id> --limit 100        # Set to def
 npx @statechange/xano-cli logs watch endpoint <id>                  # Poll for new executions
 ```
 
-### XanoScript
+### XanoScript Generation
 
 ```bash
+# Generate for any object type
 npx @statechange/xano-cli xanoscript generate function <id>
 npx @statechange/xano-cli xanoscript generate table <id>
 npx @statechange/xano-cli xanoscript generate api <id>
+npx @statechange/xano-cli xanoscript generate task <id>
+npx @statechange/xano-cli xanoscript generate trigger <id>
+npx @statechange/xano-cli xanoscript generate mcp_server <id>
+npx @statechange/xano-cli xanoscript generate addon <id>
+npx @statechange/xano-cli xanoscript generate middleware <id>
+
+# Bulk export all objects of a type
 npx @statechange/xano-cli xanoscript export-all --type function
+npx @statechange/xano-cli xanoscript export-all --type table
+npx @statechange/xano-cli xanoscript export-all --type function --output-dir ./backup
 ```
 
 ### Instance Health (Master API)
