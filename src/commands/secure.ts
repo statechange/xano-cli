@@ -6,11 +6,11 @@ import { Command } from "commander";
 import { makeClient } from "../registry-client.js";
 
 export function createSecureCommand(program: Command) {
-  const secure = program.command("secure").description("Security commands");
+  const secure = program.command("secure").description("Security commands (WRITE — modifies Xano instance)");
 
   secure
     .command("swagger")
-    .description("Secure or disable Swagger for an app")
+    .description("WRITE: Secure or disable Swagger for an app")
     .requiredOption("--app-id <id>", "App ID")
     .option("--instance <instance>", "Xano instance (e.g., app.xano.com)")
     .option("--workspace <workspace>", "Workspace ID")

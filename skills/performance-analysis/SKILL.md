@@ -102,19 +102,19 @@ npx @statechange/xano-cli performance trace endpoint <id3> --format yaml
 When `stack_truncated: true` appears in a deep-dive, Xano capped the stack at the endpoint's retention limit. Large `direct_seconds` on a function step with truncation means the real bottleneck is hidden.
 
 ```bash
-# 1. Check current retention settings
+# 1. Check current retention settings (read-only)
 npx @statechange/xano-cli logs show endpoint <id>
 
-# 2. Set to unlimited to capture full stacks
+# 2. Set to unlimited to capture full stacks (WRITE — confirm with user)
 npx @statechange/xano-cli logs set endpoint <id> --limit -1
 
-# 3. Watch for new executions
+# 3. Watch for new executions (read-only)
 npx @statechange/xano-cli logs watch endpoint <id>
 
-# 4. Deep-dive the new (untruncated) execution
+# 4. Deep-dive the new (untruncated) execution (read-only)
 npx @statechange/xano-cli performance deep-dive <new-request-id> --format yaml
 
-# 5. Restore the default limit when done
+# 5. Restore the default limit when done (WRITE — confirm with user)
 npx @statechange/xano-cli logs set endpoint <id> --limit 100
 ```
 

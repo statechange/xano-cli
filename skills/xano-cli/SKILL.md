@@ -11,18 +11,32 @@ Run commands with `npx @statechange/xano-cli <command>` (or `sc-xano` if install
 
 Once authenticated, instance/workspace/token auto-resolve. No extra flags needed for single-instance users.
 
+## Safety: Read-Only vs Write Commands
+
+Most commands are **read-only** and safe to run without side effects. Four commands **write** to the Xano instance — confirm with the user before running these:
+
+| Command | Effect |
+|---------|--------|
+| `logs set` | **WRITE** — changes history retention settings on endpoints, tasks, or triggers |
+| `secure swagger` | **WRITE** — modifies API app Swagger/documentation configuration |
+| `health clear-history` | **WRITE** — deletes history database tables on the instance |
+| `health restart-tasks` | **WRITE** — restarts the task service deployment |
+
+All other commands (inventory, xray, performance, audit, history, logs show, logs watch, xanoscript, health instances, health database) are **read-only**.
+
 ## Authentication
 
 ```bash
 npx @statechange/xano-cli auth init                    # Interactive API key setup
 npx @statechange/xano-cli auth init --api-key <key>    # Direct API key setup
 npx @statechange/xano-cli auth whoami                  # Show auth status and instances
+npx @statechange/xano-cli auth status                  # Check Xano token health
 npx @statechange/xano-cli auth set-instance <host>     # Save default instance
 ```
 
 ## Command Reference
 
-### Inventory (list workspace objects)
+### Inventory — read-only
 
 ```bash
 npx @statechange/xano-cli inventory workspace      # Object counts summary
@@ -35,7 +49,7 @@ npx @statechange/xano-cli inventory middleware     # List middleware
 npx @statechange/xano-cli inventory mcp-servers    # List MCP/toolset servers
 ```
 
-### X-Ray Analysis
+### X-Ray Analysis — read-only
 
 ```bash
 npx @statechange/xano-cli xray function --id <id>          # Analyze single function
@@ -43,17 +57,19 @@ npx @statechange/xano-cli xray scan-workspace              # Scan all functions 
 npx @statechange/xano-cli xray scan-workspace --include-warnings
 ```
 
-### Performance
+### Performance — read-only
 
 ```bash
 npx @statechange/xano-cli performance top-endpoints                    # Slowest endpoints (last 24h)
 npx @statechange/xano-cli performance top-endpoints --lookback 48      # Custom lookback
 npx @statechange/xano-cli performance scan-functions                   # Find nested slow steps
 npx @statechange/xano-cli performance trace endpoint <query-id>        # Aggregate stack analysis
+npx @statechange/xano-cli performance trace task <task-id>
+npx @statechange/xano-cli performance trace trigger <trigger-id>
 npx @statechange/xano-cli performance deep-dive <request-id>           # Single request stack expansion
 ```
 
-### Audit
+### Audit — read-only
 
 ```bash
 npx @statechange/xano-cli audit workspace      # Audit API configurations
@@ -66,14 +82,14 @@ npx @statechange/xano-cli audit triggers
 npx @statechange/xano-cli audit mcp-servers
 ```
 
-### Security
+### Security — WRITE
 
 ```bash
 npx @statechange/xano-cli secure swagger --app-id <id> --disable         # Disable Swagger
 npx @statechange/xano-cli secure swagger --app-id <id> --require-token   # Secure Swagger with token
 ```
 
-### Execution History
+### Execution History — read-only
 
 ```bash
 npx @statechange/xano-cli history requests                          # Recent API requests
@@ -85,19 +101,19 @@ npx @statechange/xano-cli history triggers <trigger-id>             # Trigger hi
 npx @statechange/xano-cli history mcp-servers <tool-id>             # MCP server history
 ```
 
-### Log Retention
+### Log Retention — show/watch are read-only, set is WRITE
 
 ```bash
 npx @statechange/xano-cli logs show                                 # All objects' retention settings
 npx @statechange/xano-cli logs show --custom-only                   # Only non-default settings
 npx @statechange/xano-cli logs show endpoint <id>                   # Single endpoint with parent app context
 npx @statechange/xano-cli logs show app <id>                        # App + all its endpoints
-npx @statechange/xano-cli logs set endpoint <id> --limit -1         # Set to unlimited
-npx @statechange/xano-cli logs set endpoint <id> --limit 100        # Set to default
+npx @statechange/xano-cli logs set endpoint <id> --limit -1         # WRITE: Set to unlimited
+npx @statechange/xano-cli logs set endpoint <id> --limit 100        # WRITE: Set to default
 npx @statechange/xano-cli logs watch endpoint <id>                  # Poll for new executions
 ```
 
-### XanoScript Generation
+### XanoScript Generation — read-only
 
 ```bash
 # Generate for any object type
@@ -116,19 +132,19 @@ npx @statechange/xano-cli xanoscript export-all --type table
 npx @statechange/xano-cli xanoscript export-all --type function --output-dir ./backup
 ```
 
-### Instance Health (Master API)
+### Instance Health — instances/database are read-only, clear-history/restart-tasks are WRITE
 
 ```bash
-npx @statechange/xano-cli health instances
-npx @statechange/xano-cli health database --instance-id <id>
-npx @statechange/xano-cli health clear-history --instance-id <id>
-npx @statechange/xano-cli health restart-tasks --instance-id <id>
+npx @statechange/xano-cli health instances                                    # List instances
+npx @statechange/xano-cli health database --instance-id <id>                  # Show DB sizes
+npx @statechange/xano-cli health clear-history --instance-id <id>             # WRITE: Clear history DBs
+npx @statechange/xano-cli health restart-tasks --instance-id <id>             # WRITE: Restart task service
 ```
 
-### Cache
+### Cache — local only
 
 ```bash
-npx @statechange/xano-cli flush    # Clear cached sink data
+npx @statechange/xano-cli flush    # Clear local cached sink data (does not affect Xano)
 ```
 
 ## Common Flags

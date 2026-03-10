@@ -53,6 +53,19 @@ sc-xano audit workspace
 
 Once authenticated, the CLI auto-resolves your Xano instance, workspace, and token from the StateChange backend. No extra flags needed if you have a single instance.
 
+## Safety: Read-Only vs Write Commands
+
+Most commands are **read-only** and safe to run without side effects. Four commands **write** to the Xano instance — confirm with the user before running these:
+
+| Command | Effect |
+|---------|--------|
+| `logs set` | Changes history retention settings on endpoints, tasks, or triggers |
+| `secure swagger` | Modifies API app Swagger/documentation configuration |
+| `health clear-history` | Deletes history database tables on the instance |
+| `health restart-tasks` | Restarts the task service deployment |
+
+All other commands are **read-only**.
+
 ## Commands
 
 ### `auth` — Authentication & Session Management
@@ -75,7 +88,7 @@ Your Xano session token is refreshed whenever you open Xano in the browser with 
 - **Expired token** — a warning is shown; if Xano rejects the request, the CLI prompts you to open Xano and polls until the session is refreshed
 - **401/403 errors** — the CLI advises running `auth status` to diagnose
 
-### `performance` — Performance Analysis
+### `performance` — Performance Analysis (read-only)
 
 Find slow endpoints, trace execution bottlenecks, and deep-dive into request stacks.
 
@@ -103,7 +116,7 @@ sc-xano performance scan-functions --min-nesting 3      # Custom nesting thresho
 
 **Deep-dive** expands a single request's stack into a recursive tree with direct vs rollup timing, percentage breakdowns (`pct_of_total`, `pct_of_parent`), loop iteration counts, and warnings for slow steps inside loops (N+1 queries, lambda blocks, external API calls).
 
-### `xray` — Function Analysis
+### `xray` — Function Analysis (read-only)
 
 Static analysis of function internals: step hierarchy, performance warnings, dependencies on other functions.
 
@@ -113,7 +126,7 @@ sc-xano xray scan-workspace                      # Scan all functions for errors
 sc-xano xray scan-workspace --include-warnings   # Include warnings (not just errors)
 ```
 
-### `audit` — Security Auditing
+### `audit` — Security Auditing (read-only)
 
 Audit workspace objects for configuration issues, unsecured endpoints, and schema problems.
 
@@ -128,16 +141,16 @@ sc-xano audit triggers          # Audit trigger configurations
 sc-xano audit mcp-servers       # Audit MCP/toolset server configurations
 ```
 
-### `secure` — Security Management
+### `secure` — Security Management (WRITE)
 
-Apply security changes to workspace objects.
+Apply security changes to workspace objects. **These commands modify your Xano instance.**
 
 ```bash
 sc-xano secure swagger --app-id <id> --disable           # Disable Swagger entirely
 sc-xano secure swagger --app-id <id> --require-token      # Require token for Swagger access
 ```
 
-### `history` — Execution History
+### `history` — Execution History (read-only)
 
 Browse request, task, trigger, and MCP server execution history.
 
@@ -158,9 +171,9 @@ sc-xano history triggers <trigger-id>             # List trigger executions
 sc-xano history mcp-servers <tool-id>             # List MCP server executions
 ```
 
-### `logs` — Log Retention Management
+### `logs` — Log Retention Management (show/watch read-only, set is WRITE)
 
-View and control how much execution history Xano retains per endpoint, task, or trigger. Useful when performance deep-dives show `stack_truncated: true`.
+View and control how much execution history Xano retains per endpoint, task, or trigger. Useful when performance deep-dives show `stack_truncated: true`. **`logs set` modifies your Xano instance.**
 
 ```bash
 # View retention settings
@@ -182,7 +195,7 @@ sc-xano logs set trigger <id> --limit -1      # And triggers
 sc-xano logs watch endpoint <id>              # Poll and display new executions as they arrive
 ```
 
-### `inventory` — Workspace Overview
+### `inventory` — Workspace Overview (read-only)
 
 List and count all objects in your workspace.
 
@@ -197,7 +210,7 @@ sc-xano inventory middleware           # List all middleware
 sc-xano inventory mcp-servers          # List all MCP/toolset servers
 ```
 
-### `xanoscript` — XanoScript Generation
+### `xanoscript` — XanoScript Generation (read-only)
 
 Generate XanoScript source code from live Xano objects. Supports all object types.
 
@@ -224,9 +237,9 @@ sc-xano xanoscript export-all --type middleware
 sc-xano xanoscript export-all --type function --output-dir ./backup   # Custom output directory
 ```
 
-### `health` — Instance Health & Restarts
+### `health` — Instance Health & Restarts (instances/database read-only, clear-history/restart-tasks WRITE)
 
-Instance-level operations for monitoring and recovery.
+Instance-level operations for monitoring and recovery. **`clear-history` and `restart-tasks` modify your Xano instance.**
 
 ```bash
 sc-xano health instances                              # List all instances with status

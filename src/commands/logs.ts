@@ -157,7 +157,7 @@ async function showSingleObject(
 export function createLogsCommand(program: Command) {
   const logs = program
     .command("logs")
-    .description("View and manage history/logging retention settings");
+    .description("View and manage history/logging retention settings (set is WRITE)");
 
   // --- logs show: display settings for a specific object or list all ---
   stdOptions(
@@ -282,7 +282,7 @@ export function createLogsCommand(program: Command) {
   stdOptions(
     logs
       .command("set")
-      .description("Update history retention for an endpoint, task, or trigger")
+      .description("WRITE: Update history retention for an endpoint, task, or trigger")
       .argument("<type>", "Object type: endpoint, task, trigger, or app")
       .argument("<id>", "Object ID")
       .option("--limit <n>", "Stack retention limit: number, -1 (unlimited), or 0 (disabled)")

@@ -35,7 +35,7 @@ const masterOptions = (cmd: Command) =>
     .option("--api-key <key>", "StateChange API key (overrides saved key)");
 
 export function createHealthCommand(program: Command) {
-  const health = program.command("health").description("Instance health & database management");
+  const health = program.command("health").description("Instance health & database management (some commands WRITE)");
 
   masterOptions(
     health
@@ -82,7 +82,7 @@ export function createHealthCommand(program: Command) {
   masterOptions(
     health
       .command("clear-history")
-      .description("Clear history databases")
+      .description("WRITE: Clear history databases")
       .option("--instance-id <id>", "Xano instance ID")
       .option("--tables <tables>", "Comma-separated table names to clear (default: all)", "")
       .option("--force", "Force clear even if large", false)
@@ -118,7 +118,7 @@ export function createHealthCommand(program: Command) {
   masterOptions(
     health
       .command("restart-tasks")
-      .description("Restart the task service deployment")
+      .description("WRITE: Restart the task service deployment")
       .option("--instance-id <id>", "Xano instance ID")
   ).action(async (options) => {
     try {
