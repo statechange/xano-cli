@@ -64,16 +64,17 @@ async function runDeviceFlow(): Promise<void> {
       interval: number;
     };
 
-  // Step 2: Show the code and open the browser
+  // Step 2: Show the code and open the browser (with code pre-filled)
+  const browserUrl = `${verification_uri}?code=${encodeURIComponent(user_code)}`;
   console.log("");
   console.log("  To authenticate, open this URL in your browser:");
   console.log("");
-  console.log(`    ${verification_uri}`);
+  console.log(`    ${browserUrl}`);
   console.log("");
-  console.log(`  And enter this code: ${user_code}`);
+  console.log(`  Code: ${user_code}`);
   console.log("");
 
-  openUrl(verification_uri);
+  openUrl(browserUrl);
   console.log("  (Browser opened automatically)");
   console.log("");
   process.stdout.write("  Waiting for authorization...");
