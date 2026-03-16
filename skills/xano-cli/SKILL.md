@@ -27,7 +27,8 @@ All other commands (inventory, xray, performance, audit, history, logs show, log
 ## Authentication
 
 ```bash
-npx @statechange/xano-cli auth init                    # Interactive API key setup
+npx @statechange/xano-cli auth login                   # Authenticate via browser (recommended)
+npx @statechange/xano-cli auth init                    # Interactive API key setup (manual)
 npx @statechange/xano-cli auth init --api-key <key>    # Direct API key setup
 npx @statechange/xano-cli auth whoami                  # Show auth status and instances
 npx @statechange/xano-cli auth status                  # Check Xano token health

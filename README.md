@@ -36,16 +36,13 @@ npx @statechange/xano-cli <command>
 ## Quick Start
 
 ```bash
-# 1. Authenticate with your StateChange API key
-sc-xano auth init --api-key <your-api-key>
+# 1. Authenticate via browser (opens automatically)
+sc-xano auth login
 
 # 2. Verify connection and see available instances
 sc-xano auth whoami
 
-# 3. Check your Xano session health
-sc-xano auth status
-
-# 4. Run commands (instance, workspace, and token auto-resolve)
+# 3. Run commands (instance, workspace, and token auto-resolve)
 sc-xano inventory workspace
 sc-xano performance top-endpoints
 sc-xano audit workspace
@@ -71,7 +68,8 @@ All other commands are **read-only**.
 ### `auth` — Authentication & Session Management
 
 ```bash
-sc-xano auth init                        # Interactive API key setup
+sc-xano auth login                       # Authenticate via browser (device code flow) — recommended
+sc-xano auth init                        # Interactive API key setup (manual)
 sc-xano auth init --api-key <key>        # Direct API key setup
 sc-xano auth whoami                      # Verify auth and list instances
 sc-xano auth status                      # Check Xano token health and session freshness
