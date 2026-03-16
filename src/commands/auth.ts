@@ -42,21 +42,139 @@ function promptForApiKey(): Promise<string> {
   });
 }
 
+async function runDeviceFlow(): Promise<void> {
+  // Step 1: Request a device code
+  const codeResponse = await fetch(`${SCKEYS_URL}/device/code`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!codeResponse.ok) {
+    const text = await codeResponse.text();
+    console.error(`Error starting login flow: ${codeResponse.status} ${text}`);
+    process.exit(1);
+  }
+
+  const { device_code, user_code, verification_uri, interval } =
+    (await codeResponse.json()) as {
+      device_code: string;
+      user_code: string;
+      verification_uri: string;
+      expires_in: number;
+      interval: number;
+    };
+
+  // Step 2: Show the code and open the browser
+  console.log("");
+  console.log("  To authenticate, open this URL in your browser:");
+  console.log("");
+  console.log(`    ${verification_uri}`);
+  console.log("");
+  console.log(`  And enter this code: ${user_code}`);
+  console.log("");
+
+  openUrl(verification_uri);
+  console.log("  (Browser opened automatically)");
+  console.log("");
+  process.stdout.write("  Waiting for authorization...");
+
+  // Step 3: Poll for completion
+  const pollInterval = (interval || 5) * 1000;
+  while (true) {
+    await sleep(pollInterval);
+
+    const tokenResponse = await fetch(`${SCKEYS_URL}/device/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device_code }),
+    });
+
+    if (!tokenResponse.ok) {
+      const text = await tokenResponse.text();
+      if (tokenResponse.status === 404) {
+        console.error("\n\n  Error: Device code not found or expired.");
+        console.error("  Please try again with 'sc-xano auth login'.");
+        process.exit(1);
+      }
+      console.error(`\n\n  Error: ${text}`);
+      process.exit(1);
+    }
+
+    const result = (await tokenResponse.json()) as {
+      status: string;
+      api_key?: string;
+    };
+
+    if (result.status === "complete" && result.api_key) {
+      // api_key here is actually the user's auth token from sc-auth
+      const authToken = result.api_key;
+      process.stdout.write(" done!\n");
+      console.log("  Creating API key...");
+
+      // Step 4: Use the auth token to create a long-lived API key
+      const keyResponse = await fetch(`${SCKEYS_URL}/keys`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          name: "CLI (device flow)",
+          description: `Created via sc-xano auth login on ${new Date().toISOString().split("T")[0]}`,
+          type: "cli",
+        }),
+      });
+
+      if (!keyResponse.ok) {
+        const text = await keyResponse.text();
+        console.error(`\n  Error creating API key: ${keyResponse.status} ${text}`);
+        console.error("  Your browser session was authorized, but key creation failed.");
+        console.error("  You can manually create a key and run: sc-xano auth init --api-key <key>");
+        process.exit(1);
+      }
+
+      const keyData = (await keyResponse.json()) as { key: string };
+      const apiKey = keyData.key;
+
+      saveAuthToFile({ apiKey });
+      console.log(`\n  ✅ Authenticated! API key saved to ${getAuthFilePath()}`);
+
+      // Verify the key works
+      try {
+        const response = await listXanoTokens(apiKey);
+        const tokens = response.tokens || [];
+        if (tokens.length > 0) {
+          console.log(`  ✅ ${tokens.length} Xano instance(s) available`);
+        }
+      } catch {
+        // Non-fatal — key is saved even if verification hiccups
+      }
+
+      console.log("");
+      console.log("  You're all set! Try running:");
+      console.log("    sc-xano auth whoami");
+      console.log("");
+      return;
+    }
+
+    // Still pending — keep polling
+    process.stdout.write(".");
+  }
+}
+
 export function createAuthCommand(program: Command) {
   const auth = program.command("auth").description("Authentication commands");
 
   auth
     .command("init")
-    .description("Initialize StateChange API key")
-    .option("--api-key <key>", "StateChange API key")
+    .description("Initialize authentication (runs device flow, or use --api-key for manual setup)")
+    .option("--api-key <key>", "StateChange API key (skip device flow)")
     .action(async (options) => {
       let apiKey = options.apiKey;
       if (!apiKey) {
-        apiKey = await promptForApiKey();
-      }
-      if (!apiKey) {
-        console.error("Error: API key is required");
-        process.exit(1);
+        // No key provided — run device flow
+        await runDeviceFlow();
+        return;
       }
       saveAuthToFile({ apiKey });
       console.log(`✅ API key saved to ${getAuthFilePath()}`);
@@ -218,129 +336,7 @@ export function createAuthCommand(program: Command) {
     .command("login")
     .description("Authenticate via browser (device code flow)")
     .action(async () => {
-      try {
-        // Step 1: Request a device code
-        const codeResponse = await fetch(`${SCKEYS_URL}/device/code`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
-
-        if (!codeResponse.ok) {
-          const text = await codeResponse.text();
-          console.error(`Error starting login flow: ${codeResponse.status} ${text}`);
-          process.exit(1);
-        }
-
-        const { device_code, user_code, verification_uri, interval } =
-          (await codeResponse.json()) as {
-            device_code: string;
-            user_code: string;
-            verification_uri: string;
-            expires_in: number;
-            interval: number;
-          };
-
-        // Step 2: Show the code and open the browser
-        console.log("");
-        console.log("  To authenticate, open this URL in your browser:");
-        console.log("");
-        console.log(`    ${verification_uri}`);
-        console.log("");
-        console.log(`  And enter this code: ${user_code}`);
-        console.log("");
-
-        openUrl(verification_uri);
-        console.log("  (Browser opened automatically)");
-        console.log("");
-        process.stdout.write("  Waiting for authorization...");
-
-        // Step 3: Poll for completion
-        const pollInterval = (interval || 5) * 1000;
-        while (true) {
-          await sleep(pollInterval);
-
-          const tokenResponse = await fetch(`${SCKEYS_URL}/device/token`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ device_code }),
-          });
-
-          if (!tokenResponse.ok) {
-            const text = await tokenResponse.text();
-            if (tokenResponse.status === 404) {
-              console.error("\n\n  Error: Device code not found or expired.");
-              console.error("  Please try again with 'sc-xano auth login'.");
-              process.exit(1);
-            }
-            // Expired or other error
-            console.error(`\n\n  Error: ${text}`);
-            process.exit(1);
-          }
-
-          const result = (await tokenResponse.json()) as {
-            status: string;
-            api_key?: string;
-          };
-
-          if (result.status === "complete" && result.api_key) {
-            // api_key here is actually the user's auth token from sc-auth
-            const authToken = result.api_key;
-            process.stdout.write(" done!\n");
-            console.log("  Creating API key...");
-
-            // Step 4: Use the auth token to create a long-lived API key
-            const keyResponse = await fetch(`${SCKEYS_URL}/keys`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${authToken}`,
-              },
-              body: JSON.stringify({
-                name: "CLI (device flow)",
-                description: `Created via sc-xano auth login on ${new Date().toISOString().split("T")[0]}`,
-                type: "cli",
-              }),
-            });
-
-            if (!keyResponse.ok) {
-              const text = await keyResponse.text();
-              console.error(`\n  Error creating API key: ${keyResponse.status} ${text}`);
-              console.error("  Your browser session was authorized, but key creation failed.");
-              console.error("  You can manually create a key and run: sc-xano auth init --api-key <key>");
-              process.exit(1);
-            }
-
-            const keyData = (await keyResponse.json()) as { key: string };
-            const apiKey = keyData.key;
-
-            saveAuthToFile({ apiKey });
-            console.log(`\n  ✅ Authenticated! API key saved to ${getAuthFilePath()}`);
-
-            // Verify the key works
-            try {
-              const response = await listXanoTokens(apiKey);
-              const tokens = response.tokens || [];
-              if (tokens.length > 0) {
-                console.log(`  ✅ ${tokens.length} Xano instance(s) available`);
-              }
-            } catch {
-              // Non-fatal — key is saved even if verification hiccups
-            }
-
-            console.log("");
-            console.log("  You're all set! Try running:");
-            console.log("    sc-xano auth whoami");
-            console.log("");
-            return;
-          }
-
-          // Still pending — keep polling
-          process.stdout.write(".");
-        }
-      } catch (e: any) {
-        console.error(`\n  Error: ${e.message}`);
-        process.exit(1);
-      }
+      await runDeviceFlow();
     });
 
   return auth;
