@@ -16,7 +16,7 @@ CLI for Xano performance analysis, operational insights, and critical security a
 The fastest way to put this CLI to work is to install the skills into your AI coding agent:
 
 ```bash
-npx skills add @statechange/xano-cli
+npx skills add statechange/xano-cli
 ```
 
 This teaches your agent (Claude Code, Cursor, etc.) how to analyze performance bottlenecks, trace slow endpoints, audit security, and generate XanoScript — all through natural conversation.

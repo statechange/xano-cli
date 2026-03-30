@@ -1,6 +1,6 @@
 {
   "name": "@statechange/xano-cli",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "CLI for Xano performance analysis, operational insights, and critical security and restart abilities",
   "type": "module",
   "bin": {
