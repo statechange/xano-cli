@@ -16,6 +16,7 @@ import { createHealthCommand } from "./commands/health.js";
 import { createHistoryCommand } from "./commands/history.js";
 import { createXanoScriptCommand } from "./commands/xanoscript.js";
 import { createLogsCommand } from "./commands/logs.js";
+import { createDocsCommand } from "./commands/docs.js";
 import { flushSinkCache } from "./xano-client.js";
 
 const program = new Command();
@@ -36,6 +37,7 @@ createHealthCommand(program);
 createHistoryCommand(program);
 createXanoScriptCommand(program);
 createLogsCommand(program);
+createDocsCommand(program);
 
 // Utility: flush cached sink data
 program

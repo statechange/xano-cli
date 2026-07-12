@@ -208,6 +208,20 @@ sc-xano inventory middleware           # List all middleware
 sc-xano inventory mcp-servers          # List all MCP/toolset servers
 ```
 
+### `docs` — Markdown Documentation (read-only)
+
+Export human-readable Markdown for your workspace (same idea as the State Change extension’s documentation export): APIs with curl examples, function stacks, tasks, triggers, functions, and toolsets. Uses workspace sinks plus Xano XS metadata for step labels.
+
+```bash
+sc-xano docs workspace -o workspace.md              # Full workspace
+sc-xano docs api --app-id <id> -o api-group.md      # One API group + endpoints
+sc-xano docs endpoint --id <query-id>               # Single endpoint
+sc-xano docs function --id <id>
+sc-xano docs task --id <id>
+sc-xano docs trigger --id <id>
+sc-xano docs workspace --no-steps --no-internals    # Shorter output
+```
+
 ### `xanoscript` — XanoScript Generation (read-only)
 
 Generate XanoScript source code from live Xano objects. Supports all object types.

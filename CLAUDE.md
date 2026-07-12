@@ -25,6 +25,7 @@ This is a Commander.js CLI (`sc-xano`) that talks to Xano's private `api:mvp-adm
 - **`src/registry-client.ts`** — Resolves instance hostname, workspace ID, and Xano token from the StateChange backend (`api.statechange.ai`). Handles CNAME resolution for custom domains → `.xano.io` hostnames (required because `api:mvp-admin` only works on raw Xano hostnames).
 - **`src/format.ts`** — Shared `outputFormatted()`, `toYaml()`, `parseFormat()`, `FORMAT_HELP`. All commands support `--format table|json|yaml`.
 - **`src/performance/load-analysis.ts`** — Aggregates request/trigger/task/MCP history into performance summaries.
+- **`src/documentation/`** — Markdown export for workspaces (ported from the browser extension’s `documentation.ts`). Loads sinks + `api:mvp-admin/mvp/xs` and uses `buildStepListFromXray` from `@statechange/xano-xray`.
 
 ### Command pattern
 

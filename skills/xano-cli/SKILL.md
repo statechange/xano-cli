@@ -1,6 +1,6 @@
 ---
 name: sc-xano
-description: Interact with Xano workspaces via the StateChange CLI. Use when the user wants to list workspace objects, analyze performance, generate XanoScript, browse execution history, audit security, or manage log retention settings from the command line.
+description: Interact with Xano workspaces via the StateChange CLI. Use when the user wants to list workspace objects, analyze performance, generate Markdown or XanoScript documentation, browse execution history, audit security, or manage log retention settings from the command line.
 ---
 
 # StateChange Xano CLI (`sc-xano`)
@@ -22,7 +22,7 @@ Most commands are **read-only** and safe to run without side effects. Four comma
 | `health clear-history` | **WRITE** — deletes history database tables on the instance |
 | `health restart-tasks` | **WRITE** — restarts the task service deployment |
 
-All other commands (inventory, xray, performance, audit, history, logs show, logs watch, xanoscript, health instances, health database) are **read-only**.
+All other commands (inventory, docs, xray, performance, audit, history, logs show, logs watch, xanoscript, health instances, health database) are **read-only**.
 
 ## Authentication
 
@@ -112,6 +112,17 @@ npx @statechange/xano-cli logs show app <id>                        # App + all 
 npx @statechange/xano-cli logs set endpoint <id> --limit -1         # WRITE: Set to unlimited
 npx @statechange/xano-cli logs set endpoint <id> --limit 100        # WRITE: Set to default
 npx @statechange/xano-cli logs watch endpoint <id>                  # Poll for new executions
+```
+
+### Markdown documentation — read-only
+
+```bash
+npx @statechange/xano-cli docs workspace -o workspace.md
+npx @statechange/xano-cli docs api --app-id <id> -o api.md
+npx @statechange/xano-cli docs endpoint --id <query-id>
+npx @statechange/xano-cli docs function --id <id>
+npx @statechange/xano-cli docs task --id <id>
+npx @statechange/xano-cli docs trigger --id <id>
 ```
 
 ### XanoScript Generation — read-only

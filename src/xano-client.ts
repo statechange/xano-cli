@@ -139,6 +139,17 @@ export class XanoClient {
     return this.fetchJson(`api:mvp-admin/workspace`);
   }
 
+  /** XanoScript / statement metadata (display names for steps, filters, schema) — instance-wide */
+  async getXS(): Promise<Record<string, any[]>> {
+    const cacheKey = `xs:${this.instance}`;
+    const cached = this.getCached<Record<string, any[]>>(cacheKey);
+    if (cached) return cached;
+
+    const payload = await this.fetchJson<Record<string, any[]>>(`api:mvp-admin/mvp/xs`);
+    this.setCache(cacheKey, payload);
+    return payload;
+  }
+
   // Function methods (cached via sink)
   async getFunctions(workspaceId: number, branchId: number = 0) {
     const cacheKey = `functions:${workspaceId}:${branchId}`;
