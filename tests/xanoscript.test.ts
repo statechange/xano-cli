@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -61,6 +61,29 @@ test("a concrete selector retains colliding object names as distinct files", asy
   assert.deepEqual(readdirSync(typeDir).sort(), ["same_name.xs", "same_name_202.xs"]);
   assert.equal(readFileSync(join(typeDir, "same_name.xs"), "utf8"), "// 101");
   assert.equal(readFileSync(join(typeDir, "same_name_202.xs"), "utf8"), "// 202");
+});
+
+test("an export rerun never overwrites a file already retained on disk", async () => {
+  const outputDir = mkdtempSync(join(tmpdir(), "sc-xano-export-rerun-"));
+  const typeDir = join(outputDir, "function");
+  const program = new Command().exitOverride();
+  const client = {
+    getFunctions: async () => ({ functions: [{ id: 202, name: "same/name" }] }),
+    generateXanoScript: async () => ({ status: "success", payload: { output: "// new" } }),
+  };
+  createXanoScriptCommand(program, {
+    makeClient: async () => ({ client, workspace: 42, branchId: 0 }),
+  });
+  mkdirSync(typeDir);
+  writeFileSync(join(typeDir, "same_name.xs"), "// existing", "utf8");
+
+  await program.parseAsync(
+    ["node", "test", "xanoscript", "export-all", "--type", "function", "--output-dir", outputDir],
+    { from: "node" }
+  );
+
+  assert.equal(readFileSync(join(typeDir, "same_name.xs"), "utf8"), "// existing");
+  assert.equal(readFileSync(join(typeDir, "same_name_202.xs"), "utf8"), "// new");
 });
 
 test("the all selector retains collisions independently in every type directory", async () => {

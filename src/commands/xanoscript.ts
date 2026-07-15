@@ -5,7 +5,7 @@
 import { Command } from "commander";
 import { XanoClient } from "../xano-client.js";
 import { makeClient } from "../cli-connection.js";
-import { writeFileSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync, readdirSync } from "fs";
 import { join, resolve } from "path";
 
 const stdOptions = (cmd: Command) =>
@@ -126,14 +126,18 @@ function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9_\-. ]/g, "_");
 }
 
+function filenameClaimKey(filename: string): string {
+  return filename.toLowerCase();
+}
+
 export type AllocatedXanoScriptFilename = {
   filename: string;
   disambiguated: boolean;
 };
 
 /**
- * Claims a deterministic filename for one export. The first basename keeps
- * the existing shape; a collision prefers the object's stable ID.
+ * Claims a deterministic filename for one export. Claim keys are normalized
+ * for case-insensitive filesystems; collisions prefer the object's stable ID.
  */
 export function allocateXanoScriptFilename(
   name: string,
@@ -142,8 +146,9 @@ export function allocateXanoScriptFilename(
 ): AllocatedXanoScriptFilename {
   const basename = sanitizeFilename(name);
   const originalFilename = `${basename}.xs`;
-  if (!claimedFilenames.has(originalFilename)) {
-    claimedFilenames.add(originalFilename);
+  const originalKey = filenameClaimKey(originalFilename);
+  if (!claimedFilenames.has(originalKey)) {
+    claimedFilenames.add(originalKey);
     return { filename: originalFilename, disambiguated: false };
   }
 
@@ -151,19 +156,20 @@ export function allocateXanoScriptFilename(
   const sanitizedId = sanitizeFilename(rawId);
   if (rawId && /[a-zA-Z0-9]/.test(sanitizedId)) {
     const idFilename = `${basename}_${sanitizedId}.xs`;
-    if (!claimedFilenames.has(idFilename)) {
-      claimedFilenames.add(idFilename);
+    const idKey = filenameClaimKey(idFilename);
+    if (!claimedFilenames.has(idKey)) {
+      claimedFilenames.add(idKey);
       return { filename: idFilename, disambiguated: true };
     }
   }
 
   let suffix = 2;
   let fallbackFilename = `${basename}_${suffix}.xs`;
-  while (claimedFilenames.has(fallbackFilename)) {
+  while (claimedFilenames.has(filenameClaimKey(fallbackFilename))) {
     suffix++;
     fallbackFilename = `${basename}_${suffix}.xs`;
   }
-  claimedFilenames.add(fallbackFilename);
+  claimedFilenames.add(filenameClaimKey(fallbackFilename));
   return { filename: fallbackFilename, disambiguated: true };
 }
 
@@ -176,8 +182,13 @@ export function retainXanoScriptFile(
   claimedFilenames: Set<string>
 ): AllocatedXanoScriptFilename {
   const allocation = allocateXanoScriptFilename(name, objectId, claimedFilenames);
-  writeFileSync(join(outputDir, allocation.filename), script, "utf-8");
-  return allocation;
+  try {
+    writeFileSync(join(outputDir, allocation.filename), script, { encoding: "utf-8", flag: "wx" });
+    return allocation;
+  } catch (error) {
+    claimedFilenames.delete(filenameClaimKey(allocation.filename));
+    throw error;
+  }
 }
 
 type XanoScriptCommandDependencies = {
@@ -257,13 +268,13 @@ export function createXanoScriptCommand(
 
       for (const type of selectedTypes) {
         const outputDir = resolve(options.outputDir, type);
-        const claimedFilenames = new Set<string>();
         let typeSuccess = 0;
         let typeSkipped = 0;
         let typeErrors = 0;
 
         try {
           mkdirSync(outputDir, { recursive: true });
+          const claimedFilenames = new Set(readdirSync(outputDir).map(filenameClaimKey));
           console.log(`Fetching ${type} objects from workspace ${workspace}...\n`);
           const { items, nameField } = await fetchObjectsOfType(client, workspace, branchId, type);
           console.log(`Found ${items.length} ${type}(s). Generating XanoScript...\n`);

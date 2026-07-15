@@ -152,6 +152,7 @@ The `all` selector covers `function`, `table`, `api`, `task`, `trigger`, `mcp_se
 errors, report retained/skipped/error totals, and return nonzero if anything fails. Same-name and
 sanitize-colliding objects never overwrite one another: collisions use the stable object ID, then a
 deterministic numeric suffix. The first object keeps the existing `<sanitized-name>.xs` shape.
+Existing files and case-only filename collisions are also preserved rather than overwritten.
 
 ### Instance Health — instances/database are read-only, clear-history/restart-tasks are WRITE
 

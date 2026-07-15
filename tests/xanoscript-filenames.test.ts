@@ -47,6 +47,13 @@ test("repeated IDs fall back instead of reclaiming an occupied filename", () => 
   assert.equal(claimed.size, 3);
 });
 
+test("case-only name differences are treated as filename collisions", () => {
+  const claimed = new Set<string>();
+
+  assert.equal(allocateXanoScriptFilename("Report", 1, claimed).filename, "Report.xs");
+  assert.equal(allocateXanoScriptFilename("report", 2, claimed).filename, "report_2.xs");
+});
+
 test("unique names preserve the existing filename shape", () => {
   const claimed = new Set<string>();
 

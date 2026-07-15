@@ -260,6 +260,8 @@ write beneath `<output-dir>/<type>/`, print per-type and aggregate retained/skip
 exit nonzero if any export fails. Filenames are collision-safe: the first object keeps
 `<sanitized-name>.xs`; later collisions prefer `<sanitized-name>_<id>.xs`, then a deterministic numeric
 suffix when needed. The `--type` option remains required so a complete export is always deliberate.
+Existing files and case-only filename collisions are treated as claimed paths, so rerunning an export
+into the same directory preserves earlier output.
 
 ### `health` — Instance Health & Restarts (instances/database read-only, clear-history/restart-tasks WRITE)
 
