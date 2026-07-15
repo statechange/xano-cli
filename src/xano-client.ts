@@ -6,6 +6,15 @@
 export interface XanoClientConfig {
   instance: string;
   token: string;
+  canonicalHostname?: string;
+  refreshToken?: () => Promise<string>;
+  onTokenExpired?: () => Promise<string>;
+  fetcher?: typeof fetch;
+  connectionContext?: {
+    requestedIdentity: string;
+    registryIdentity: string;
+    workspace: number;
+  };
 }
 
 // Sink cache: keyed by "sinkType:workspaceId:branchId", stores { data, timestamp }
@@ -29,12 +38,19 @@ export function flushSinkCache(key?: string) {
 export class XanoClient {
   private instance: string;
   private token: string;
-  private onTokenExpired?: () => Promise<string>;
+  private canonicalHostname?: string;
+  private refreshToken?: () => Promise<string>;
+  private fetcher: typeof fetch;
+  private connectionContext?: XanoClientConfig["connectionContext"];
+  private responseHostnames = new WeakMap<Response, string>();
 
-  constructor(config: XanoClientConfig & { onTokenExpired?: () => Promise<string> }) {
+  constructor(config: XanoClientConfig) {
     this.instance = config.instance;
     this.token = config.token;
-    this.onTokenExpired = config.onTokenExpired;
+    this.canonicalHostname = config.canonicalHostname;
+    this.refreshToken = config.refreshToken ?? config.onTokenExpired;
+    this.fetcher = config.fetcher ?? fetch;
+    this.connectionContext = config.connectionContext;
   }
 
   /** Flush the sink cache (call after writes) */
@@ -55,9 +71,14 @@ export class XanoClient {
     sinkCache.set(key, { data, timestamp: Date.now() });
   }
 
-  async fetch(path: string, options?: RequestInit): Promise<Response> {
-    const uri = `https://${this.instance}/${path}`;
-    const response = await fetch(uri, {
+  private describeConnection(requestHostname = this.instance): string {
+    const context = this.connectionContext;
+    return `requested=${context?.requestedIdentity ?? this.instance}, request=${requestHostname}, workspace=${context?.workspace || "unset"}, registry=${context?.registryIdentity ?? "unset"}`;
+  }
+
+  private async fetchFrom(hostname: string, path: string, options?: RequestInit): Promise<Response> {
+    const uri = `https://${hostname}/${path}`;
+    return this.fetcher(uri, {
       ...(options || {}),
       headers: {
         ...(options?.headers || {}),
@@ -65,6 +86,33 @@ export class XanoClient {
         "Content-Type": "application/json",
       },
     });
+  }
+
+  async fetch(path: string, options?: RequestInit, allowNonIdempotentRoutingFallback = false): Promise<Response> {
+    let response: Response;
+    let activeHostname = this.instance;
+    try {
+      response = await this.fetchFrom(activeHostname, path, options);
+    } catch (error) {
+      const method = (options?.method ?? "GET").toUpperCase();
+      const canReplay = ["GET", "HEAD", "OPTIONS"].includes(method) || allowNonIdempotentRoutingFallback;
+      if (!canReplay || !this.canonicalHostname || this.canonicalHostname === this.instance) throw error;
+      activeHostname = this.canonicalHostname;
+      response = await this.fetchFrom(activeHostname, path, options);
+    }
+
+    if (response.status === 401 && this.refreshToken) {
+      try {
+        const refreshed = await this.refreshToken();
+        if (refreshed) {
+          this.token = refreshed;
+          response = await this.fetchFrom(activeHostname, path, options);
+        }
+      } catch {
+        // Preserve the original 401 so callers report only safe local context.
+      }
+    }
+    this.responseHostnames.set(response, activeHostname);
     return response;
   }
 
@@ -82,8 +130,11 @@ export class XanoClient {
         const response = await this.fetch(path, opts);
         if (!response.ok) {
           if (currentAttempt >= attempts) {
+            const authContext = response.status === 401
+              ? ` (${this.describeConnection(this.responseHostnames.get(response))})`
+              : "";
             throw new Error(
-              `Failed to fetch ${path} after ${attempts} attempts: ${response.status} ${response.statusText}`
+              `Failed to fetch ${path} after ${attempts} attempts: ${response.status} ${response.statusText}${authContext}`
             );
           } else if (response.status >= 500) {
             await new Promise((resolve) =>
@@ -91,29 +142,17 @@ export class XanoClient {
             );
             currentAttempt++;
             continue;
-          } else if (response.status === 401 && this.onTokenExpired && currentAttempt === 0) {
-            // Token rejected — try to refresh via callback
-            try {
-              this.token = await this.onTokenExpired();
-              currentAttempt++;
-              continue;
-            } catch {
-              // Refresh failed — fall through to throw the API error
-            }
-            const errorText = await response.text();
-            const apiError = new Error(
-              `Xano API error: 401 Unauthorized - ${errorText}\n\nYour Xano session may have expired. Run 'sc-xano auth status' to check token health.`
-            );
-            (apiError as any).isApiError = true;
-            throw apiError;
           } else {
-            const errorText = await response.text();
+            const errorText = response.status === 401 ? "" : await response.text();
             let hint = "";
-            if (response.status === 401 || response.status === 403) {
+            if (response.status === 403) {
               hint = `\n\nRun 'sc-xano auth status' to check your Xano session.`;
             }
+            const authContext = response.status === 401
+              ? ` (${this.describeConnection(this.responseHostnames.get(response))})`
+              : "";
             const apiError = new Error(
-              `Xano API error: ${response.status} ${response.statusText} - ${errorText}${hint}`
+              `Xano API error: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}${authContext}${hint}`
             );
             (apiError as any).isApiError = true;
             throw apiError;
@@ -427,7 +466,8 @@ export class XanoClient {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const response = await this.fetch(
         `api:mvp-admin/workspace/${workspaceId}/script`,
-        { method: "POST", body }
+        { method: "POST", body },
+        true,
       );
 
       if (response.ok) {
@@ -439,6 +479,16 @@ export class XanoClient {
         const delay = baseDelay * Math.pow(2, attempt);
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
+      }
+
+      if (response.status === 401) {
+        return {
+          status: "error",
+          payload: {
+            message: `Authentication failed (${this.describeConnection(this.responseHostnames.get(response))})`,
+            doIgnore: false,
+          },
+        };
       }
 
       try {

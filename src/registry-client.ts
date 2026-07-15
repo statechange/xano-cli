@@ -3,8 +3,6 @@
  */
 
 import { getStateChangeApiKey, getAuthToken, loadAuthFromFile, saveAuthToFile } from "./auth.js";
-import { XanoClient } from "./xano-client.js";
-import { resolve as dnsResolve } from "dns/promises";
 
 const STATECHANGE_BACKEND_URL = "https://api.statechange.ai/api:jKMCYXQa/";
 
@@ -121,28 +119,6 @@ export async function resolveMasterToken(options: { token?: string; apiKey?: str
   return "";
 }
 
-/**
- * Resolve a custom domain to its underlying .xano.io hostname via CNAME.
- * Xano admin APIs (api:mvp-admin) are only served on the raw hostname,
- * not on custom domains.
- */
-async function resolveXanoHostname(hostname: string): Promise<string> {
-  if (hostname.endsWith(".xano.io")) return hostname;
-  try {
-    const records = await dnsResolve(hostname, "CNAME");
-    if (records.length > 0) {
-      // CNAME may have trailing dot, strip it
-      const cname = records[0].replace(/\.$/, "");
-      if (cname.endsWith(".xano.io")) return cname;
-      // Could be chained (e.g. custom -> x.n7.xano.io -> n7.xano.io)
-      // The first xano.io CNAME is what we want
-    }
-  } catch (e) {
-    // No CNAME record — hostname might already be correct
-  }
-  return hostname;
-}
-
 // Cache the token list to avoid redundant API calls within the same CLI invocation
 let cachedTokenList: any[] | null = null;
 
@@ -173,7 +149,7 @@ export interface TokenHealth {
 }
 
 export function checkTokenHealth(token: any): TokenHealth {
-  const updatedAt = token.updated_at ?? token.updatedAt ?? 0;
+  const updatedAt = token.updated_at ?? token.updatedAt ?? token.created_at ?? token.createdAt ?? 0;
   const ttl = (token.ttl ?? 86400) * 1000; // seconds → ms
   const expiresAt = updatedAt + ttl;
   const now = Date.now();
@@ -284,12 +260,9 @@ export async function resolveInstance(options: { instance?: string; apiKey?: str
 
   if (!hostname) return "";
 
-  // Resolve custom domains to the real .xano.io hostname
-  // (admin APIs are only served on the raw Xano hostname)
-  hostname = await resolveXanoHostname(hostname);
-
-  // Cache the resolved hostname
-  if (auth && auth.xanoInstance !== hostname) {
+  // Persist only an explicitly requested identity. DNS aliases are request
+  // routing metadata owned by the validated connection layer.
+  if (auth && options.instance && auth.xanoInstance !== hostname) {
     auth.xanoInstance = hostname;
     saveAuthToFile(auth);
   }
@@ -366,59 +339,4 @@ export async function resolveXanoToken(options: ResolveTokenOptions & { skipHeal
     }
   }
   return "";
-}
-
-/**
- * Resolve instance/workspace/token and create a XanoClient with auto-refresh on 401.
- * Replaces the per-command makeClient() boilerplate.
- */
-export async function makeClient(options: any): Promise<{
-  client: XanoClient;
-  instance: string;
-  workspace: number;
-  branchId: number;
-}> {
-  const instance = await resolveInstance({ instance: options.instance, apiKey: options.apiKey });
-  if (!instance) {
-    console.error("Error: Xano instance required (--instance or XANO_INSTANCE env var)");
-    process.exit(1);
-  }
-  const token = await resolveXanoToken({ instance, token: options.token, apiKey: options.apiKey });
-  if (!token) {
-    console.error("Error: Xano token required (--token, XANO_TOKEN, or StateChange backend via 'sc-xano auth init')");
-    process.exit(1);
-  }
-  const workspace = await resolveWorkspace({ workspace: options.workspace, apiKey: options.apiKey });
-  if (!workspace) {
-    console.error("Error: Workspace ID required (--workspace or XANO_WORKSPACE env var)");
-    process.exit(1);
-  }
-  const branchId = parseInt(options.branch || "0");
-
-  // Wire up 401 refresh: on Xano token rejection, poll SC backend for a fresh token
-  const apiKey = getStateChangeApiKey({ apiKey: options.apiKey });
-  const onTokenExpired = apiKey
-    ? async () => {
-        // First, check if backend has a newer token already (e.g. user refreshed recently)
-        const tokens = await freshTokenList(apiKey);
-        const match = tokens.find(
-          (t) => (t.instanceId || t.instance_id) === instance
-        ) || (tokens.length === 1 ? tokens[0] : null);
-        if (!match) throw new Error("No token found");
-
-        const matchInstance = match.instanceId || match.instance_id || instance;
-        const currentUpdatedAt = match.updated_at ?? match.updatedAt ?? 0;
-
-        // If the backend token is recent (updated in last 60s), just return it
-        if (Date.now() - currentUpdatedAt < 60000) {
-          return match.rawXanoToken || match.raw_xano_token || "";
-        }
-
-        // Otherwise, prompt user and poll for refresh
-        return await waitForFreshToken(apiKey, matchInstance, currentUpdatedAt);
-      }
-    : undefined;
-
-  const client = new XanoClient({ instance, token, onTokenExpired });
-  return { client, instance, workspace, branchId };
 }

@@ -4,7 +4,7 @@
 
 import { Command } from "commander";
 import { writeFileSync } from "fs";
-import { makeClient } from "../registry-client.js";
+import { makeClient } from "../cli-connection.js";
 import {
   loadDocsInventory,
   makeDocumentation,
