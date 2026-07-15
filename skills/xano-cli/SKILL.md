@@ -138,11 +138,20 @@ npx @statechange/xano-cli xanoscript generate mcp_server <id>
 npx @statechange/xano-cli xanoscript generate addon <id>
 npx @statechange/xano-cli xanoscript generate middleware <id>
 
-# Bulk export all objects of a type
+# Export every supported type into separate subdirectories
+npx @statechange/xano-cli xanoscript export-all --type all --output-dir ./backup
+
+# Export all objects of one concrete type
 npx @statechange/xano-cli xanoscript export-all --type function
 npx @statechange/xano-cli xanoscript export-all --type table
 npx @statechange/xano-cli xanoscript export-all --type function --output-dir ./backup
 ```
+
+The `all` selector covers `function`, `table`, `api`, `task`, `trigger`, `mcp_server`, `addon`, and
+`middleware`. Every type writes below `<output-dir>/<type>/`; exports continue after type or object
+errors, report retained/skipped/error totals, and return nonzero if anything fails. Same-name and
+sanitize-colliding objects never overwrite one another: collisions use the stable object ID, then a
+deterministic numeric suffix. The first object keeps the existing `<sanitized-name>.xs` shape.
 
 ### Instance Health — instances/database are read-only, clear-history/restart-tasks are WRITE
 

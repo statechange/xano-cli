@@ -239,7 +239,10 @@ sc-xano xanoscript generate mcp_server <id>
 sc-xano xanoscript generate addon <id>
 sc-xano xanoscript generate middleware <id>
 
-# Bulk export all objects of a type to .xs files
+# Export every supported type into its own subdirectory
+sc-xano xanoscript export-all --type all --output-dir ./backup
+
+# Export only one concrete type
 sc-xano xanoscript export-all --type function
 sc-xano xanoscript export-all --type table
 sc-xano xanoscript export-all --type api
@@ -250,6 +253,13 @@ sc-xano xanoscript export-all --type addon
 sc-xano xanoscript export-all --type middleware
 sc-xano xanoscript export-all --type function --output-dir ./backup   # Custom output directory
 ```
+
+`--type all` attempts `function`, `table`, `api`, `task`, `trigger`, `mcp_server`, `addon`, and
+`middleware`, continuing after individual type or object failures. Both complete and concrete exports
+write beneath `<output-dir>/<type>/`, print per-type and aggregate retained/skipped/error totals, and
+exit nonzero if any export fails. Filenames are collision-safe: the first object keeps
+`<sanitized-name>.xs`; later collisions prefer `<sanitized-name>_<id>.xs`, then a deterministic numeric
+suffix when needed. The `--type` option remains required so a complete export is always deliberate.
 
 ### `health` — Instance Health & Restarts (instances/database read-only, clear-history/restart-tasks WRITE)
 
