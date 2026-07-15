@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+This repository is the canonical standalone State Change CLI for Xano. It is graveyard-managed: work is tracked in GitHub issues and autonomous shifts should leave resumable state in issues, pull requests, and the project docs linked below.
+
+repo-type: code
+project-types: none
+
+Technical decisions live in `docs/DECISIONS.md`, architecture in `docs/ARCHITECTURE.md`, and strategic state in the Notion Project Overview linked from `docs/OVERVIEW.md`.
+
 ## Build & Run
 
 ```bash
@@ -38,7 +45,7 @@ Each file in `src/commands/` exports a `create*Command(program)` function that a
 ### Key constraints
 
 - **Sink-based lookups**: Individual object endpoints (`function/{id}`) return 404 on custom domains. Always use sink/list endpoints and pluck by ID.
-- **CNAME resolution**: Custom domains must be resolved to raw `.xano.io` hostnames via DNS CNAME lookup before making `api:mvp-admin` calls.
+- **Connection identities**: Keep the user-requested instance, registry credential identity, request hostname, and optional canonical CNAME distinct. Do not let DNS routing silently change which credential record is selected; see `docs/DECISIONS.md` and issue #2.
 - **Zero-flag design**: Instance, workspace, and token auto-resolve from StateChange backend. Single-instance users need no flags after `auth init`.
 - **`@statechange/xano-xray`**: Shared analysis library (also used by the browser extension) that provides `analyzeAPI`, `analyzeFunction`, etc.
 
