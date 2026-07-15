@@ -107,3 +107,12 @@ test("displayed token health also falls back to creation time", () => {
   const health = checkTokenHealth({ createdAt: Date.now() - 60_000, updatedAt: null, ttl: 86_400 });
   assert.equal(health.status, "fresh");
 });
+
+test("displayed token health parses ISO creation timestamps", () => {
+  const health = checkTokenHealth({
+    createdAt: new Date(Date.now() - 60_000).toISOString(),
+    updatedAt: null,
+    ttl: 86_400,
+  });
+  assert.equal(health.status, "fresh");
+});

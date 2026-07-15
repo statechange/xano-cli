@@ -103,6 +103,11 @@ export function isTokenFresh(token: RegistryToken, now = Date.now()): boolean {
   return healthySince != null && now - healthySince < token.ttl * 1000;
 }
 
+/**
+ * Select a fresh registry credential without changing request routing.
+ * Exact identity wins, followed by an unambiguous workspace match and then a
+ * canonical alias. Conflicts, expired exact records, and ambiguity fail closed.
+ */
 export function selectRegistryCredential(input: RegistrySelectionInput) {
   const now = input.now ?? Date.now();
   const candidates = input.tokens.filter((token) => identity(token) && rawToken(token));
@@ -185,6 +190,11 @@ async function registryTokens(apiKey: string, fresh = false): Promise<RegistryTo
   return tokens;
 }
 
+/**
+ * Resolve the complete connection before client construction. Flags precede
+ * environment and saved defaults; user-managed tokens precede registry lookup.
+ * A CNAME is retained only as optional routing fallback metadata.
+ */
 export async function resolveConnection(options: ResolveConnectionOptions): Promise<ConnectionSelection> {
   const auth = loadAuthFromFile();
   const apiKey = getStateChangeApiKey({ apiKey: options.apiKey });

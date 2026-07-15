@@ -88,6 +88,10 @@ export class XanoClient {
     });
   }
 
+  /**
+   * Send one authenticated request. Canonical fallback normally replays only
+   * idempotent methods; callers may opt in for read-like POST operations.
+   */
   async fetch(path: string, options?: RequestInit, allowNonIdempotentRoutingFallback = false): Promise<Response> {
     let response: Response;
     let activeHostname = this.instance;

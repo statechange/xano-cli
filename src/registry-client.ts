@@ -149,7 +149,8 @@ export interface TokenHealth {
 }
 
 export function checkTokenHealth(token: any): TokenHealth {
-  const updatedAt = token.updated_at ?? token.updatedAt ?? token.created_at ?? token.createdAt ?? 0;
+  const rawTimestamp = token.updated_at ?? token.updatedAt ?? token.created_at ?? token.createdAt ?? 0;
+  const updatedAt = typeof rawTimestamp === "string" ? Date.parse(rawTimestamp) || 0 : rawTimestamp;
   const ttl = (token.ttl ?? 86400) * 1000; // seconds → ms
   const expiresAt = updatedAt + ttl;
   const now = Date.now();
