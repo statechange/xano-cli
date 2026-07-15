@@ -24,11 +24,11 @@ The connection layer must keep requested identity, credential identity, request 
 - Prefer sink/list endpoints and select objects locally. Individual-object admin endpoints are unreliable on custom domains.
 - Read commands may resolve credentials automatically; explicit CLI flags and environment tokens remain authoritative.
 - Sink responses are cached in memory for 60 seconds. Writes flush the relevant cache.
-- Four command families are intentionally write-capable: `logs set`, `secure swagger`, `health clear-history`, and `health restart-tasks`. The rest of the CLI is read-only.
+- Four subcommands intentionally mutate a live Xano instance: `logs set`, `secure swagger`, `health clear-history`, and `health restart-tasks`. Authentication persists local configuration, while documentation and XanoScript exports write only user-requested local files; other operational commands are read-only against Xano.
 
 ## XanoScript export boundary
 
-XanoScript generation calls `api:mvp-admin/mvp/xs` after loading objects from the relevant sink. Bulk exports write beneath a directory for the selected concrete type. The concrete type registry is the source of truth for validation, help, and complete-export iteration. Filename allocation is a separate contract from file writing so collision behavior remains deterministic and testable.
+XanoScript generation calls `api:mvp-admin/mvp/xs` after loading objects from the relevant sink. Today, bulk exports write beneath a directory for one selected concrete type and derive filenames directly from sanitized object names, so collisions can overwrite earlier files. Issues #1 and #3 establish the target: the concrete type registry will drive validation, help, and complete-export iteration, and filename allocation will become a separate deterministic, testable contract that never overwrites an earlier successful export.
 
 ## Build and verification
 

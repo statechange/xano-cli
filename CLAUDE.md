@@ -29,7 +29,7 @@ This is a Commander.js CLI (`sc-xano`) that talks to Xano's private `api:mvp-adm
 - **`src/index.ts`** — Entry point. Registers all subcommands with Commander and parses argv.
 - **`src/xano-client.ts`** — `XanoClient` (workspace operations via `api:mvp-admin`) and `XanoMasterClient` (instance-level operations via `api:master` on app.xano.com). All sink endpoints are cached in-memory with 60s TTL; write operations flush the cache.
 - **`src/auth.ts`** — Manages StateChange API key persistence in `~/.statechange/auth.json`. Exchanges API key for short-lived auth token via StateChange backend.
-- **`src/registry-client.ts`** — Resolves instance hostname, workspace ID, and Xano token from the StateChange backend (`api.statechange.ai`). Handles CNAME resolution for custom domains → `.xano.io` hostnames (required because `api:mvp-admin` only works on raw Xano hostnames).
+- **`src/registry-client.ts`** — Resolves requested instance identity, workspace ID, and Xano token from the StateChange backend (`api.statechange.ai`). It may discover a canonical `.xano.io` CNAME as routing metadata, but that derived hostname must remain separate from credential identity and saved user intent.
 - **`src/format.ts`** — Shared `outputFormatted()`, `toYaml()`, `parseFormat()`, `FORMAT_HELP`. All commands support `--format table|json|yaml`.
 - **`src/performance/load-analysis.ts`** — Aggregates request/trigger/task/MCP history into performance summaries.
 - **`src/documentation/`** — Markdown export for workspaces (ported from the browser extension’s `documentation.ts`). Loads sinks + `api:mvp-admin/mvp/xs` and uses `buildStepListFromXray` from `@statechange/xano-xray`.
