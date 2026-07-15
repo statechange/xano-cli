@@ -5,7 +5,7 @@
 import { Command } from "commander";
 import { XanoClient } from "../xano-client.js";
 import { makeClient } from "../cli-connection.js";
-import { writeFileSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync, readdirSync } from "fs";
 import { join, resolve } from "path";
 
 const stdOptions = (cmd: Command) =>
@@ -16,8 +16,23 @@ const stdOptions = (cmd: Command) =>
     .option("--token <token>", "Xano API token")
     .option("--api-key <key>", "StateChange API key (overrides saved key)");
 
-// Map CLI type names to XanoScript kind values
-const TYPE_TO_KIND: Record<string, string> = {
+// The one registry of concrete types that can be fetched and exported.
+// `all` is deliberately a CLI selector, not a Xano schema kind.
+export const EXPORTABLE_XANOSCRIPT_TYPES = [
+  "function",
+  "table",
+  "api",
+  "task",
+  "trigger",
+  "mcp_server",
+  "addon",
+  "middleware",
+] as const;
+
+export type ExportableXanoScriptType = (typeof EXPORTABLE_XANOSCRIPT_TYPES)[number];
+export type XanoScriptExportSelector = ExportableXanoScriptType | "all";
+
+const TYPE_TO_KIND: Record<ExportableXanoScriptType, string> = {
   function: "schema:function",
   table: "schema:table",
   api: "schema:query",
@@ -28,6 +43,20 @@ const TYPE_TO_KIND: Record<string, string> = {
   middleware: "schema:middleware",
 };
 
+export function selectExportTypes(
+  selector: XanoScriptExportSelector
+): readonly ExportableXanoScriptType[] {
+  return selector === "all" ? EXPORTABLE_XANOSCRIPT_TYPES : [selector];
+}
+
+function isExportableType(value: string): value is ExportableXanoScriptType {
+  return EXPORTABLE_XANOSCRIPT_TYPES.includes(value as ExportableXanoScriptType);
+}
+
+function isExportSelector(value: string): value is XanoScriptExportSelector {
+  return value === "all" || isExportableType(value);
+}
+
 // Map CLI type names to the sink fetcher methods
 type FetcherResult = { items: any[]; nameField: string };
 
@@ -35,7 +64,7 @@ async function fetchObjectsOfType(
   client: XanoClient,
   workspace: number,
   branchId: number,
-  type: string
+  type: ExportableXanoScriptType
 ): Promise<FetcherResult> {
   switch (type) {
     case "function": {
@@ -70,8 +99,10 @@ async function fetchObjectsOfType(
       const mw = await client.getMiddleware(workspace, branchId);
       return { items: mw, nameField: "name" };
     }
-    default:
-      throw new Error(`Unknown type: ${type}. Valid types: ${Object.keys(TYPE_TO_KIND).join(", ")}`);
+    default: {
+      const exhaustiveCheck: never = type;
+      throw new Error(`Unknown XanoScript export type: ${exhaustiveCheck}`);
+    }
   }
 }
 
@@ -85,18 +116,89 @@ function resolveKind(type: string, data?: any): string {
   // Special handling for database type
   if (type === "database") return "schema:table";
 
-  const kind = TYPE_TO_KIND[type];
-  if (!kind) {
+  if (!isExportableType(type)) {
     throw new Error(`Unknown type: ${type}. Valid types: ${Object.keys(TYPE_TO_KIND).join(", ")}`);
   }
-  return kind;
+  return TYPE_TO_KIND[type];
 }
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9_\-. ]/g, "_");
 }
 
-export function createXanoScriptCommand(program: Command) {
+function filenameClaimKey(filename: string): string {
+  return filename.toLowerCase();
+}
+
+export type AllocatedXanoScriptFilename = {
+  filename: string;
+  disambiguated: boolean;
+};
+
+/**
+ * Claims a deterministic filename for one export. Claim keys are normalized
+ * for case-insensitive filesystems; collisions prefer the object's stable ID.
+ */
+export function allocateXanoScriptFilename(
+  name: string,
+  objectId: unknown,
+  claimedFilenames: Set<string>
+): AllocatedXanoScriptFilename {
+  const basename = sanitizeFilename(name);
+  const originalFilename = `${basename}.xs`;
+  const originalKey = filenameClaimKey(originalFilename);
+  if (!claimedFilenames.has(originalKey)) {
+    claimedFilenames.add(originalKey);
+    return { filename: originalFilename, disambiguated: false };
+  }
+
+  const rawId = objectId == null ? "" : String(objectId).trim();
+  const sanitizedId = sanitizeFilename(rawId);
+  if (rawId && /[a-zA-Z0-9]/.test(sanitizedId)) {
+    const idFilename = `${basename}_${sanitizedId}.xs`;
+    const idKey = filenameClaimKey(idFilename);
+    if (!claimedFilenames.has(idKey)) {
+      claimedFilenames.add(idKey);
+      return { filename: idFilename, disambiguated: true };
+    }
+  }
+
+  let suffix = 2;
+  let fallbackFilename = `${basename}_${suffix}.xs`;
+  while (claimedFilenames.has(filenameClaimKey(fallbackFilename))) {
+    suffix++;
+    fallbackFilename = `${basename}_${suffix}.xs`;
+  }
+  claimedFilenames.add(filenameClaimKey(fallbackFilename));
+  return { filename: fallbackFilename, disambiguated: true };
+}
+
+/** Writes one generated script to its newly claimed path. */
+export function retainXanoScriptFile(
+  outputDir: string,
+  name: string,
+  objectId: unknown,
+  script: string,
+  claimedFilenames: Set<string>
+): AllocatedXanoScriptFilename {
+  const allocation = allocateXanoScriptFilename(name, objectId, claimedFilenames);
+  try {
+    writeFileSync(join(outputDir, allocation.filename), script, { encoding: "utf-8", flag: "wx" });
+    return allocation;
+  } catch (error) {
+    claimedFilenames.delete(filenameClaimKey(allocation.filename));
+    throw error;
+  }
+}
+
+type XanoScriptCommandDependencies = {
+  makeClient: (options: any) => Promise<{ client: any; workspace: number; branchId: number }>;
+};
+
+export function createXanoScriptCommand(
+  program: Command,
+  dependencies: XanoScriptCommandDependencies = { makeClient }
+) {
   const xs = program.command("xanoscript").description("XanoScript generation");
 
   stdOptions(
@@ -107,7 +209,7 @@ export function createXanoScriptCommand(program: Command) {
       .argument("<id>", "Object ID")
   ).action(async (type, id, options) => {
     try {
-      const { client, workspace, branchId } = await makeClient(options);
+      const { client, workspace, branchId } = await dependencies.makeClient(options);
       const objectId = parseInt(id);
 
       // Fetch via sink and pluck by ID
@@ -141,61 +243,92 @@ export function createXanoScriptCommand(program: Command) {
   stdOptions(
     xs
       .command("export-all")
-      .description("Bulk export all objects of a type to .xs files")
-      .option("--type <type>", `Object type (${Object.keys(TYPE_TO_KIND).join(", ")})`)
+      .description("Bulk export XanoScript objects to type-specific .xs directories")
+      .option("--type <type>", `Export selector (${[...EXPORTABLE_XANOSCRIPT_TYPES, "all"].join(", ")})`)
       .option("--output-dir <dir>", "Output directory", "./xanoscript")
   ).action(async (options) => {
     try {
       if (!options.type) {
-        console.error(`Error: --type required. Valid types: ${Object.keys(TYPE_TO_KIND).join(", ")}`);
-        process.exit(1);
+        console.error(`Error: --type required. Valid selectors: ${[...EXPORTABLE_XANOSCRIPT_TYPES, "all"].join(", ")}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (!isExportSelector(options.type)) {
+        console.error(`Error: Unknown type: ${options.type}. Valid selectors: ${[...EXPORTABLE_XANOSCRIPT_TYPES, "all"].join(", ")}`);
+        process.exitCode = 1;
+        return;
       }
 
-      const { client, workspace, branchId } = await makeClient(options);
-      const type = options.type;
-      const outputDir = resolve(options.outputDir, type);
-
-      mkdirSync(outputDir, { recursive: true });
-
-      console.log(`Fetching ${type} objects from workspace ${workspace}...\n`);
-      const { items, nameField } = await fetchObjectsOfType(client, workspace, branchId, type);
-      console.log(`Found ${items.length} ${type}(s). Generating XanoScript...\n`);
+      const { client, workspace, branchId } = await dependencies.makeClient(options);
+      const selectedTypes = selectExportTypes(options.type);
 
       let success = 0;
       let skipped = 0;
       let errors = 0;
 
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const name = item[nameField] || `unnamed_${item.id}`;
-        process.stdout.write(`  [${i + 1}/${items.length}] ${name}...`);
+      for (const type of selectedTypes) {
+        const outputDir = resolve(options.outputDir, type);
+        let typeSuccess = 0;
+        let typeSkipped = 0;
+        let typeErrors = 0;
 
-        // Sink data already contains full objects
-        const kind = resolveKind(type, item);
-        const result = await client.generateXanoScript(workspace, item, kind);
+        try {
+          mkdirSync(outputDir, { recursive: true });
+          const claimedFilenames = new Set(readdirSync(outputDir).map(filenameClaimKey));
+          console.log(`Fetching ${type} objects from workspace ${workspace}...\n`);
+          const { items, nameField } = await fetchObjectsOfType(client, workspace, branchId, type);
+          console.log(`Found ${items.length} ${type}(s). Generating XanoScript...\n`);
 
-        if (result.status === "success" && result.payload?.output) {
-          const filename = `${sanitizeFilename(name)}.xs`;
-          const filepath = join(outputDir, filename);
-          writeFileSync(filepath, result.payload.output, "utf-8");
-          console.log(` ✅`);
-          success++;
-        } else if (result.payload?.doIgnore) {
-          console.log(` ⏭️  skipped`);
-          skipped++;
-        } else {
-          console.log(` ❌ ${result.payload?.message || "unknown error"}`);
-          errors++;
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const name = item[nameField] || `unnamed_${item.id}`;
+            process.stdout.write(`  [${i + 1}/${items.length}] ${name}...`);
+
+            try {
+              const kind = resolveKind(type, item);
+              const result = await client.generateXanoScript(workspace, item, kind);
+
+              if (result.status === "success" && result.payload?.output) {
+                const { filename, disambiguated } = retainXanoScriptFile(
+                  outputDir,
+                  name,
+                  item.id,
+                  result.payload.output,
+                  claimedFilenames
+                );
+                console.log(disambiguated ? ` ✅ ${filename} (collision disambiguated)` : ` ✅`);
+                typeSuccess++;
+              } else if (result.payload?.doIgnore) {
+                console.log(` ⏭️  skipped`);
+                typeSkipped++;
+              } else {
+                console.log(` ❌ ${result.payload?.message || "unknown error"}`);
+                typeErrors++;
+              }
+            } catch (error: any) {
+              console.log(` ❌ ${error.message}`);
+              typeErrors++;
+            }
+          }
+        } catch (error: any) {
+          console.error(`Error exporting ${type}: ${error.message}`);
+          typeErrors++;
         }
+
+        success += typeSuccess;
+        skipped += typeSkipped;
+        errors += typeErrors;
+        console.log(`\n${type}: ${typeSuccess} files retained, ${typeSkipped} skipped, ${typeErrors} errors`);
+        console.log(`Output: ${outputDir}/\n`);
       }
 
-      console.log(`\nDone: ${success} exported, ${skipped} skipped, ${errors} errors`);
-      if (success > 0) {
-        console.log(`Output: ${outputDir}/`);
+      console.log(`Done: ${success} files retained, ${skipped} skipped, ${errors} errors`);
+      if (errors > 0) {
+        process.exitCode = 1;
       }
     } catch (error: any) {
       console.error("Error:", error.message);
-      process.exit(1);
+      process.exitCode = 1;
     }
   });
 
