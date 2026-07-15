@@ -4,7 +4,7 @@
 
 import { Command } from "commander";
 import { analyzeAPI } from "@statechange/xano-xray";
-import { makeClient } from "../registry-client.js";
+import { makeClient } from "../cli-connection.js";
 import { FORMAT_HELP, parseFormat, outputFormatted } from "../format.js";
 
 const stdOptions = (cmd: Command) =>

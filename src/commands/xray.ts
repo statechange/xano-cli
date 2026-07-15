@@ -9,7 +9,7 @@ import {
   getStepWarnings,
   analyzeStack,
 } from "@statechange/xano-xray";
-import { makeClient } from "../registry-client.js";
+import { makeClient } from "../cli-connection.js";
 import { FORMAT_HELP, parseFormat, outputFormatted } from "../format.js";
 
 export function createXRayCommand(program: Command) {

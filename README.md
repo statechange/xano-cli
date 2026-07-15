@@ -83,8 +83,10 @@ Your Xano session token is refreshed whenever you open Xano in the browser with 
 
 - **Fresh token** — commands run normally
 - **Stale token** — a warning is shown, but commands still proceed
-- **Expired token** — a warning is shown; if Xano rejects the request, the CLI prompts you to open Xano and polls until the session is refreshed
-- **401/403 errors** — the CLI advises running `auth status` to diagnose
+- **Expired token** — a warning is shown; if Xano rejects the request, the CLI reloads registry credentials once and replays the request once
+- **401 errors** — failures identify the selected instance, request hostname, workspace, and registry identity without exposing credentials
+
+Custom-domain identity and request routing remain separate: commands try the requested hostname first and only use a discovered `.xano.io` CNAME after a transport failure. DNS aliases never overwrite the saved instance or silently select another registry credential.
 
 ### `performance` — Performance Analysis (read-only)
 

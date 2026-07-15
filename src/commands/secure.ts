@@ -3,7 +3,7 @@
  */
 
 import { Command } from "commander";
-import { makeClient } from "../registry-client.js";
+import { makeClient } from "../cli-connection.js";
 
 export function createSecureCommand(program: Command) {
   const secure = program.command("secure").description("Security commands (WRITE — modifies Xano instance)");

@@ -4,7 +4,7 @@
 
 import { Command } from "commander";
 import { XanoClient } from "../xano-client.js";
-import { makeClient } from "../registry-client.js";
+import { makeClient } from "../cli-connection.js";
 import { writeFileSync, mkdirSync } from "fs";
 import { join, resolve } from "path";
 
