@@ -5,6 +5,9 @@ description: Analyze and optimize Xano workspace performance. Use when the user 
 
 # Xano Performance Analysis
 
+The [README performance section](../../README.md#performance--performance-analysis-read-only)
+is the current field contract; this skill turns that contract into an analysis workflow.
+
 **Requires:** A [State Change](https://statechange.ai) subscription, the [State Change browser extension](https://chromewebstore.google.com/detail/statechange-power-tools-f/jgednopabapolfhfbgipkkigkafnlmla) installed in Chrome, and the `sc-xano` CLI to be authenticated (see the `sc-xano` skill).
 
 ## Workflow: "Why is my workspace slow?"
@@ -30,7 +33,7 @@ npx @statechange/xano-cli performance trace task <task-id> --samples 10 --format
 npx @statechange/xano-cli performance trace trigger <trigger-id> --samples 10 --format yaml
 ```
 
-**Note:** Task history items don't include stack traces (Xano API limitation). Trace will show duration percentiles but no step breakdown for tasks.
+**Note:** Current task history commonly returns duration without retained stack data. In that case trace still reports target metadata and duration percentiles, while ancestry, hotspots, functions, and issues are empty.
 
 The trace output shows:
 - **Duration percentiles** (avg, p50, p95, p99) across samples

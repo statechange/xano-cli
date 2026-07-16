@@ -18,7 +18,12 @@ node dist/index.js     # run CLI directly
 npx tsx src/index.ts   # run from source without building
 ```
 
-No test framework is configured. There are no tests.
+Behavioral tests use Node's built-in test runner with TypeScript loaded through
+`tsx`:
+
+```bash
+npm test
+```
 
 ## Architecture
 
@@ -32,6 +37,7 @@ This is a Commander.js CLI (`sc-xano`) that talks to Xano's private `api:mvp-adm
 - **`src/registry-client.ts`** — Resolves requested instance identity, workspace ID, and Xano token from the StateChange backend (`api.statechange.ai`). It may discover a canonical `.xano.io` CNAME as routing metadata, but that derived hostname must remain separate from credential identity and saved user intent.
 - **`src/format.ts`** — Shared `outputFormatted()`, `toYaml()`, `parseFormat()`, `FORMAT_HELP`. All commands support `--format table|json|yaml`.
 - **`src/performance/load-analysis.ts`** — Aggregates request/trigger/task/MCP history into performance summaries.
+- **`src/performance/stack-rollup.ts`** and **`src/performance/trace-analysis.ts`** — Walk and aggregate runtime execution stacks for `performance deep-dive` and `performance trace`. `TRACE-DEEP-DIVE-PLAN.md` records the shipped design history; current behavior is documented in README and the bundled performance skill.
 - **`src/documentation/`** — Markdown export for workspaces (ported from the browser extension’s `documentation.ts`). Loads sinks + `api:mvp-admin/mvp/xs` and uses `buildStepListFromXray` from `@statechange/xano-xray`.
 
 ### Command pattern
@@ -54,7 +60,7 @@ Each file in `src/commands/` exports a `create*Command(program)` function that a
 This CLI was extracted from the `cli/` directory of `../GitHub/parcel-test-2`, a Chrome extension for Xano workspace analysis. That repo is the reference for patterns, prior art, and logic to port — particularly:
 
 - `src/workers/xanoapi.ts` — original Xano API client (basis for `xano-client.ts`)
-- `src/content/performance.ts` — `perfByXsid()` rollup logic for deep-dive performance analysis (not yet ported)
+- `src/content/performance.ts` — origin of the `perfByXsid()` rollup idea. The CLI shipped a deliberately redesigned recursive stack walker in `src/performance/stack-rollup.ts`; see `TRACE-DEEP-DIVE-PLAN.md` for the design history and verified payload boundary.
 - `src/workers/` — background workers with analysis pipelines
 
 When adding new features, check the extension repo first for existing implementations.
