@@ -115,8 +115,9 @@ async function fetchObjectsOfType(
 function resolveKind(type: string, data?: any): string {
   // Special handling for triggers based on obj_type
   if (type === "trigger" && data) {
-    const triggerKind = TRIGGER_OBJ_TYPE_TO_KIND[data.obj_type];
-    if (triggerKind) return triggerKind;
+    if (Object.hasOwn(TRIGGER_OBJ_TYPE_TO_KIND, data.obj_type)) {
+      return TRIGGER_OBJ_TYPE_TO_KIND[data.obj_type];
+    }
   }
   // Special handling for database type
   if (type === "database") return "schema:table";

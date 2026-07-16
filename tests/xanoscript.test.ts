@@ -55,6 +55,7 @@ test("trigger exports preserve specialized and ordinary schema kinds", async () 
       { id: 2, name: "Table Trigger", obj_type: "database" },
       { id: 3, name: "Realtime Trigger", obj_type: "workspace_realtime_channel" },
       { id: 4, name: "Ordinary Trigger", obj_type: "workspace" },
+      { id: 5, name: "Prototype Key Trigger", obj_type: "constructor" },
     ],
     generateXanoScript: async (
       _workspace: number,
@@ -80,6 +81,7 @@ test("trigger exports preserve specialized and ordinary schema kinds", async () 
     { name: "Table Trigger", kind: "schema:table_trigger" },
     { name: "Realtime Trigger", kind: "schema:realtime_trigger" },
     { name: "Ordinary Trigger", kind: "schema:trigger" },
+    { name: "Prototype Key Trigger", kind: "schema:trigger" },
   ]);
 });
 
