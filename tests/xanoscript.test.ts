@@ -17,6 +17,72 @@ test("the all selector expands to every concrete export type exactly once", () =
   assert.equal(selectExportTypes("all").includes("all" as never), false);
 });
 
+test("workspace realtime triggers use the realtime trigger schema kind", async () => {
+  const outputDir = mkdtempSync(join(tmpdir(), "sc-xano-export-realtime-trigger-"));
+  const generatedKinds: string[] = [];
+  const client = {
+    getTriggers: async () => [
+      { id: 13, name: "Real_Time_Trigger_0", obj_type: "workspace_realtime_channel" },
+    ],
+    generateXanoScript: async (_workspace: number, _item: unknown, kind: string) => {
+      generatedKinds.push(kind);
+      return { status: "success", payload: { output: "realtime_trigger Real_Time_Trigger_0 {}" } };
+    },
+  };
+  const program = new Command().exitOverride();
+  createXanoScriptCommand(program, {
+    makeClient: async () => ({ client, workspace: 19, branchId: 0 }),
+  });
+
+  await program.parseAsync(
+    ["node", "test", "xanoscript", "export-all", "--type", "trigger", "--output-dir", outputDir],
+    { from: "node" }
+  );
+
+  assert.deepEqual(generatedKinds, ["schema:realtime_trigger"]);
+  assert.equal(
+    readFileSync(join(outputDir, "trigger", "Real_Time_Trigger_0.xs"), "utf8"),
+    "realtime_trigger Real_Time_Trigger_0 {}"
+  );
+});
+
+test("trigger exports preserve specialized and ordinary schema kinds", async () => {
+  const outputDir = mkdtempSync(join(tmpdir(), "sc-xano-export-trigger-kinds-"));
+  const generated: Array<{ name: string; kind: string }> = [];
+  const client = {
+    getTriggers: async () => [
+      { id: 1, name: "MCP Trigger", obj_type: "toolset" },
+      { id: 2, name: "Table Trigger", obj_type: "database" },
+      { id: 3, name: "Realtime Trigger", obj_type: "workspace_realtime_channel" },
+      { id: 4, name: "Ordinary Trigger", obj_type: "workspace" },
+    ],
+    generateXanoScript: async (
+      _workspace: number,
+      item: { name: string },
+      kind: string
+    ) => {
+      generated.push({ name: item.name, kind });
+      return { status: "success", payload: { output: `// ${item.name}` } };
+    },
+  };
+  const program = new Command().exitOverride();
+  createXanoScriptCommand(program, {
+    makeClient: async () => ({ client, workspace: 19, branchId: 0 }),
+  });
+
+  await program.parseAsync(
+    ["node", "test", "xanoscript", "export-all", "--type", "trigger", "--output-dir", outputDir],
+    { from: "node" }
+  );
+
+  assert.deepEqual(generated, [
+    { name: "MCP Trigger", kind: "schema:mcp_server_trigger" },
+    { name: "Table Trigger", kind: "schema:table_trigger" },
+    { name: "Realtime Trigger", kind: "schema:realtime_trigger" },
+    { name: "Ordinary Trigger", kind: "schema:trigger" },
+  ]);
+});
+
 test("a concrete selector retains colliding object names as distinct files", async () => {
   const outputDir = mkdtempSync(join(tmpdir(), "sc-xano-export-single-collision-"));
   const fetched: string[] = [];
