@@ -11,9 +11,21 @@ import {
   nestingLevel,
 } from "@statechange/xano-xray";
 import { OutputFormat, FORMAT_HELP, parseFormat, outputFormatted, toYaml } from "../format.js";
-import { walkStack, collectFunctionCalls, collectWarnings, StackNode } from "../performance/stack-rollup.js";
+import {
+  aggregateStackNodes,
+  collectFunctionCalls,
+  collectWarnings,
+  countRetainedStackNodes,
+  walkStack,
+  type StackAggregate,
+  type StackNode,
+} from "../performance/stack-rollup.js";
 
-export function createPerformanceCommand(program: Command) {
+export function createPerformanceCommand(
+  program: Command,
+  dependencies: { makeClient?: typeof makeClient } = {},
+) {
+  const makePerformanceClient = dependencies.makeClient ?? makeClient;
   const perf = program
     .command("performance")
     .description("Performance analysis commands");
@@ -30,7 +42,7 @@ export function createPerformanceCommand(program: Command) {
     .option("--limit <limit>", "Number of results to show", "20")
     .option("--format <format>", FORMAT_HELP, "table")
     .action(async (options) => {
-      const { client, instance, workspace, branchId } = await makeClient(options);
+      const { client, instance, workspace, branchId } = await makePerformanceClient(options);
       const lookBackHours = parseInt(options.lookback);
       const lookBack = lookBackHours * 60 * 60 * 1000;
       const limit = parseInt(options.limit);
@@ -148,7 +160,7 @@ export function createPerformanceCommand(program: Command) {
     .option("--min-nesting <level>", "Minimum nesting level to report", "2")
     .option("--format <format>", FORMAT_HELP, "table")
     .action(async (options) => {
-      const { client, workspace, branchId } = await makeClient(options);
+      const { client, workspace, branchId } = await makePerformanceClient(options);
       const minNesting = parseInt(options.minNesting || "2");
       const format = parseFormat(options.format);
 
@@ -262,7 +274,7 @@ export function createPerformanceCommand(program: Command) {
     .option("--api-key <key>", "StateChange API key (overrides saved key)")
     .option("--format <format>", FORMAT_HELP, "table")
     .action(async (requestId, options) => {
-      const { client, workspace, branchId } = await makeClient(options);
+      const { client, workspace, branchId } = await makePerformanceClient(options);
       const format = parseFormat(options.format);
 
       try {
@@ -299,6 +311,8 @@ export function createPerformanceCommand(program: Command) {
             duration_seconds: +durationSecs.toFixed(4),
             created_at: req.created_at || null,
             stack_truncated: req.stack_maxed || false,
+            runtime_stack_count: req.cnt ?? null,
+            retained_stack_nodes: countRetainedStackNodes(stackTree),
           },
           stack: stackTree,
           functions_called: functionsCalled.length > 0 ? functionsCalled : undefined,
@@ -312,6 +326,7 @@ export function createPerformanceCommand(program: Command) {
         console.log(`\nRequest ${r.id}:`);
         console.log(`  ${r.verb || ""} ${r.uri || ""} — ${r.status ?? "—"} (${r.duration_seconds}s)`);
         console.log(`  Date: ${r.created_at || "—"}`);
+        console.log(`  Retained stack nodes: ${r.retained_stack_nodes}${r.runtime_stack_count != null ? ` / runtime count ${r.runtime_stack_count}` : ""}`);
         if (r.stack_truncated) console.log(`  ⚠ Stack was truncated by Xano`);
 
         console.log(`\nStack Breakdown:\n`);
@@ -321,7 +336,7 @@ export function createPerformanceCommand(program: Command) {
           console.log(`\nFunctions Called:\n`);
           for (const fc of functionsCalled) {
             const name = fc.name || `Function ${fc.id}`;
-            console.log(`  ${name} (ID: ${fc.id}) — ${fc.call_count} call(s), ${fc.total_seconds}s total`);
+            console.log(`  ${name} (ID: ${fc.id}) — ${fc.call_count} retained call(s), ${fc.retained_stack_nodes} retained child node(s), ${fc.total_seconds}s total`);
           }
         }
 
@@ -355,7 +370,7 @@ export function createPerformanceCommand(program: Command) {
         process.exit(1);
       }
 
-      const { client, workspace, branchId } = await makeClient(options);
+      const { client, workspace, branchId } = await makePerformanceClient(options);
       const maxSamples = parseInt(options.samples);
       const format = parseFormat(options.format);
       const objectId = parseInt(id);
@@ -401,18 +416,15 @@ export function createPerformanceCommand(program: Command) {
 
         // Fetch full request details for each sample
         const durations: number[] = [];
-        const aggregateByXsid = new Map<string, {
-          name: string;
-          title?: string;
-          totalDirect: number;
-          totalRollup: number;
-          count: number;
-          function_id?: number;
-          function_name?: string;
-          warnings: Set<string>;
-        }>();
+        const aggregateByXsid = new Map<string, StackAggregate>();
 
-        const allFunctionCalls = new Map<number, { name?: string; count: number; totalSecs: number }>();
+        const allFunctionCalls = new Map<number, {
+          name?: string;
+          count: number;
+          retainedStackNodes: number;
+          totalSecs: number;
+        }>();
+        let truncatedSamples = 0;
 
         for (const item of samples) {
           let detail: any;
@@ -424,19 +436,33 @@ export function createPerformanceCommand(program: Command) {
 
           const dur = detail.duration ?? 0;
           durations.push(dur);
+          if (detail.stack_maxed) truncatedSamples++;
 
           if (!detail.stack || detail.stack.length === 0) continue;
 
-          const tree = walkStack(detail.stack, dur, undefined, "", functionMap);
+          const tree = walkStack(
+            detail.stack,
+            dur,
+            undefined,
+            "",
+            functionMap,
+            { suppressWarnings: type === "task" },
+          );
 
           // Aggregate by _xsid
-          aggregateNodes(tree, aggregateByXsid);
+          aggregateStackNodes(tree, aggregateByXsid);
 
           // Collect function calls
           const fcs = collectFunctionCalls(tree);
           for (const fc of fcs) {
-            const existing = allFunctionCalls.get(fc.id) || { name: fc.name, count: 0, totalSecs: 0 };
+            const existing = allFunctionCalls.get(fc.id) || {
+              name: fc.name,
+              count: 0,
+              retainedStackNodes: 0,
+              totalSecs: 0,
+            };
             existing.count += fc.call_count;
+            existing.retainedStackNodes += fc.retained_stack_nodes;
             existing.totalSecs += fc.total_seconds;
             if (fc.name) existing.name = fc.name;
             allFunctionCalls.set(fc.id, existing);
@@ -455,10 +481,17 @@ export function createPerformanceCommand(program: Command) {
             _xsid: xsid,
             name: data.name,
             title: data.title || undefined,
-            avg_direct_seconds: +(data.totalDirect / data.count).toFixed(4),
-            avg_rollup_seconds: +(data.totalRollup / data.count).toFixed(4),
-            total_rollup_seconds: +data.totalRollup.toFixed(4),
-            occurrences: data.count,
+            avg_direct_seconds: +(data.total_direct_seconds / data.occurrences).toFixed(4),
+            avg_rollup_seconds: +(data.total_rollup_seconds / data.occurrences).toFixed(4),
+            total_rollup_seconds: +data.total_rollup_seconds.toFixed(4),
+            occurrences: data.occurrences,
+            occurrences_complete: truncatedSamples === 0,
+            runtime_count_total: data.runtime_count_total || undefined,
+            iterations_total: data.iterations_total || undefined,
+            avg_iterations_per_occurrence: data.iterations_total > 0
+              ? +(data.iterations_total / data.occurrences).toFixed(1)
+              : undefined,
+            retained_stack_nodes: data.retained_stack_nodes,
             function_id: data.function_id,
             function_name: data.function_name,
             warnings: data.warnings.size > 0 ? Array.from(data.warnings) : undefined,
@@ -470,6 +503,8 @@ export function createPerformanceCommand(program: Command) {
             id: fid,
             name: info.name,
             total_calls: info.count,
+            calls_complete: truncatedSamples === 0,
+            retained_stack_nodes: info.retainedStackNodes,
             avg_calls_per_request: +(info.count / samples.length).toFixed(1),
             total_seconds: +info.totalSecs.toFixed(4),
             avg_seconds_per_call: info.count > 0 ? +(info.totalSecs / info.count).toFixed(4) : 0,
@@ -479,6 +514,8 @@ export function createPerformanceCommand(program: Command) {
         const output = {
           target: { type, id: objectId },
           samples: samples.length,
+          truncated_samples: truncatedSamples,
+          complete_samples: samples.length - truncatedSamples,
           duration: {
             avg_seconds: +avgDuration.toFixed(4),
             p50_seconds: +p50.toFixed(4),
@@ -494,12 +531,19 @@ export function createPerformanceCommand(program: Command) {
         // Table format
         console.log(`\nTrace: ${type} ${objectId} (${samples.length} samples)\n`);
         console.log(`  Avg duration: ${avgDuration.toFixed(4)}s  |  p50: ${p50.toFixed(4)}s  |  p95: ${p95.toFixed(4)}s\n`);
+        if (truncatedSamples > 0) {
+          console.log(`  ⚠ ${truncatedSamples}/${samples.length} stacks truncated; occurrence and call counts are retained lower bounds\n`);
+        }
         console.log(`Top steps by total time:\n`);
         for (const step of stepBreakdown.slice(0, 20)) {
           const label = step.title || step.name;
           const fnLabel = step.function_name ? ` → ${step.function_name}` : "";
+          const countLabel = step.occurrences_complete ? "occurrences" : "retained occurrences";
           console.log(`  ${label}${fnLabel}`);
-          console.log(`    avg_direct: ${step.avg_direct_seconds}s  avg_rollup: ${step.avg_rollup_seconds}s  total: ${step.total_rollup_seconds}s  (${step.occurrences} occurrences)`);
+          console.log(`    avg_direct: ${step.avg_direct_seconds}s  avg_rollup: ${step.avg_rollup_seconds}s  total: ${step.total_rollup_seconds}s  (${step.occurrences} ${countLabel})`);
+          if (step.iterations_total) {
+            console.log(`    iterations: ${step.iterations_total} total (${step.avg_iterations_per_occurrence} avg/runtime node)`);
+          }
           if (step.warnings) {
             for (const w of step.warnings) console.log(`    ⚠ ${w}`);
           }
@@ -519,43 +563,6 @@ export function createPerformanceCommand(program: Command) {
     });
 
   return perf;
-}
-
-/** Aggregate StackNode data by _xsid across multiple executions */
-function aggregateNodes(
-  nodes: StackNode[],
-  acc: Map<string, {
-    name: string;
-    title?: string;
-    totalDirect: number;
-    totalRollup: number;
-    count: number;
-    function_id?: number;
-    function_name?: string;
-    warnings: Set<string>;
-  }>,
-) {
-  for (const node of nodes) {
-    const key = node._xsid || `pos:${node.position}:${node.name}`;
-    const existing = acc.get(key) || {
-      name: node.name,
-      title: node.title,
-      totalDirect: 0,
-      totalRollup: 0,
-      count: 0,
-      function_id: node.function_id,
-      function_name: node.function_name,
-      warnings: new Set<string>(),
-    };
-    existing.totalDirect += node.direct_seconds;
-    existing.totalRollup += node.rollup_seconds;
-    existing.count++;
-    if (node.function_id) existing.function_id = node.function_id;
-    if (node.function_name) existing.function_name = node.function_name;
-    if (node.warning) existing.warnings.add(node.warning);
-    acc.set(key, existing);
-    aggregateNodes(node.children, acc);
-  }
 }
 
 function printStackTree(nodes: StackNode[], indent: string) {

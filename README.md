@@ -112,9 +112,11 @@ sc-xano performance scan-functions
 sc-xano performance scan-functions --min-nesting 3      # Custom nesting threshold
 ```
 
-**Trace** aggregates timing data across N samples, showing duration percentiles (avg, p50, p95, p99) and per-step breakdown by `_xsid`. Steps with high occurrences relative to samples indicate they run inside loops.
+**Trace** aggregates timing data across N samples, showing duration percentiles (avg, p50, p95, p99) and per-step breakdown by `_xsid`. `occurrences` counts stack nodes actually retained in the fetched payloads; it is not an execution multiplier. When any stack is capped, `truncated_samples` is nonzero and `occurrences_complete` is false, so those counts are explicitly lower bounds. Loop nodes separately expose Xano's `runtime_count_total` and `iterations_total` without multiplying already-unrolled child nodes.
 
-**Deep-dive** expands a single request's stack into a recursive tree with direct vs rollup timing, percentage breakdowns (`pct_of_total`, `pct_of_parent`), loop iteration counts, and warnings for slow steps inside loops (N+1 queries, lambda blocks, external API calls).
+**Deep-dive** expands a single request's stack into a recursive tree. Runtime `timing` is an inclusive rollup; `direct_seconds` subtracts child rollups and clamps only negative clock/rounding residue. Runtime coordinates (`position2`, then `position`) are preferred, with deterministic tree positions as a fallback because live payloads may omit both. Each node keeps Xano's type-specific `runtime_count`, the number of `retained_stack_nodes`, and (for loop nodes only) `iterations`. Function `call_count` counts retained invocation nodes rather than treating a function node's `cnt` as calls.
+
+Warnings identify slow steps inside loops (N+1 queries, lambda blocks, external API calls). A `#ignore-performance` marker or explicit suppression flag in available runtime/static metadata suppresses the warning for that subtree, and task traces opt out globally. When Xano omits that metadata, the CLI cannot infer an author-side suppression and reports the runtime warning. See [the trace/deep-dive initiative](TRACE-DEEP-DIVE-PLAN.md) for the broader command context; the fields documented here are the current runtime contract.
 
 ### `xray` — Function Analysis (read-only)
 
