@@ -60,6 +60,9 @@ npx @statechange/xano-cli xray scan-workspace --include-warnings
 
 ### Performance — read-only
 
+See the [README performance section](../../README.md#performance--performance-analysis-read-only)
+for current output fields, count semantics, identity rules, and limitations.
+
 ```bash
 npx @statechange/xano-cli performance top-endpoints                    # Slowest endpoints (last 24h)
 npx @statechange/xano-cli performance top-endpoints --lookback 48      # Custom lookback

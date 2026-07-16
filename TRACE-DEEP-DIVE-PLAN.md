@@ -67,7 +67,7 @@ The original plan treated several fields as universally available and described
 - **`position2` and `position` are optional runtime coordinates.** The walker
   prefers `position2`, then `position`, and uses deterministic tree positions
   when live payloads omit both.
-- **`raw.context.function.id` is optional, not authoritative.** A read-only
+- **`raw.context.function.id` is optional, but authoritative when valid.** A read-only
   workspace-19 request probe recorded in [#10](https://github.com/statechange/xano-cli/issues/10)
   contained an `mvp:function` node titled `Circle Authenticated Request` but no
   `raw` field. Trace now attempts an exact, unambiguous, version-aligned static
