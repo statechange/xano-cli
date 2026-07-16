@@ -43,6 +43,12 @@ const TYPE_TO_KIND: Record<ExportableXanoScriptType, string> = {
   middleware: "schema:middleware",
 };
 
+const TRIGGER_OBJ_TYPE_TO_KIND: Readonly<Record<string, string>> = {
+  toolset: "schema:mcp_server_trigger",
+  database: "schema:table_trigger",
+  workspace_realtime_channel: "schema:realtime_trigger",
+};
+
 export function selectExportTypes(
   selector: XanoScriptExportSelector
 ): readonly ExportableXanoScriptType[] {
@@ -109,9 +115,9 @@ async function fetchObjectsOfType(
 function resolveKind(type: string, data?: any): string {
   // Special handling for triggers based on obj_type
   if (type === "trigger" && data) {
-    const objType = data.obj_type;
-    if (objType === "toolset") return "schema:mcp_server_trigger";
-    if (objType === "database") return "schema:table_trigger";
+    if (Object.hasOwn(TRIGGER_OBJ_TYPE_TO_KIND, data.obj_type)) {
+      return TRIGGER_OBJ_TYPE_TO_KIND[data.obj_type];
+    }
   }
   // Special handling for database type
   if (type === "database") return "schema:table";
