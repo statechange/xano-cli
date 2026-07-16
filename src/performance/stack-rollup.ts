@@ -13,6 +13,11 @@ export interface StackNode {
   rollup_seconds: number;
   pct_of_total: number;
   pct_of_parent?: number;
+  /** Xano's raw cnt value. Its meaning is step-type-specific. */
+  runtime_count?: number;
+  /** Number of descendant stack nodes retained in this payload. */
+  retained_stack_nodes: number;
+  /** Loop iteration count reported by Xano; only present on loop nodes. */
   iterations?: number;
   function_id?: number;
   function_name?: string;
@@ -39,10 +44,31 @@ export interface FunctionCallSummary {
   id: number;
   name?: string;
   call_count: number;
+  retained_stack_nodes: number;
   total_seconds: number;
 }
 
+export interface StackAggregate {
+  name: string;
+  title?: string;
+  total_direct_seconds: number;
+  total_rollup_seconds: number;
+  occurrences: number;
+  runtime_count_total: number;
+  iterations_total: number;
+  retained_stack_nodes: number;
+  function_id?: number;
+  function_name?: string;
+  warnings: Set<string>;
+}
+
 const LOOP_NAMES = ["mvp:foreach", "mvp:for", "mvp:while"];
+const IGNORE_PERFORMANCE_MARKER = "#ignore-performance";
+
+export interface WalkStackOptions {
+  /** Suppress runtime warnings for sources such as tasks that opt out globally. */
+  suppressWarnings?: boolean;
+}
 
 /**
  * Walk a runtime stack array and produce a tree of StackNodes with timing rollups.
@@ -53,7 +79,9 @@ export function walkStack(
   parentRollup?: number,
   positionPrefix = "",
   functionMap?: Map<number, string>,
+  options: WalkStackOptions = {},
   loopDepth = 0,
+  ancestorSuppressesWarnings = false,
 ): StackNode[] {
   if (!stack || stack.length === 0) return [];
 
@@ -61,10 +89,12 @@ export function walkStack(
 
   for (let i = 0; i < stack.length; i++) {
     const step = stack[i];
-    const position = positionPrefix ? `${positionPrefix}.${i + 1}` : `${i + 1}`;
+    const fallbackPosition = positionPrefix ? `${positionPrefix}.${i + 1}` : `${i + 1}`;
+    const position = step.position2 || step.position || fallbackPosition;
     const timingSecs = step.timing ?? 0;
     const isLoop = LOOP_NAMES.includes(step.name);
     const childLoopDepth = isLoop ? loopDepth + 1 : loopDepth;
+    const suppressWarnings = ancestorSuppressesWarnings || hasPerformanceSuppression(step);
 
     // Recurse into children
     const children = walkStack(
@@ -73,10 +103,17 @@ export function walkStack(
       timingSecs,
       position,
       functionMap,
+      options,
       childLoopDepth,
+      suppressWarnings,
     );
 
-    const childrenRollup = children.reduce((sum, c) => sum + c.rollup_seconds, 0);
+    // Subtract raw inclusive child timings before output rounding. Summing the
+    // rounded public fields can manufacture a small direct-time residue.
+    const childrenRollup = (step.stack || []).reduce(
+      (sum: number, child: any) => sum + (Number(child.timing) || 0),
+      0,
+    );
     const directSecs = Math.max(0, timingSecs - childrenRollup);
     const rollupSecs = timingSecs;
 
@@ -88,6 +125,7 @@ export function walkStack(
       direct_seconds: +directSecs.toFixed(4),
       rollup_seconds: +rollupSecs.toFixed(4),
       pct_of_total: totalDuration > 0 ? +((rollupSecs / totalDuration) * 100).toFixed(1) : 0,
+      retained_stack_nodes: countRetainedStackNodes(children),
       children,
     };
 
@@ -95,7 +133,11 @@ export function walkStack(
       node.pct_of_parent = +((rollupSecs / parentRollup) * 100).toFixed(1);
     }
 
-    if (step.cnt != null && step.cnt > 1) {
+    if (step.cnt != null) {
+      node.runtime_count = step.cnt;
+    }
+
+    if (isLoop && step.cnt != null) {
       node.iterations = step.cnt;
     }
 
@@ -108,7 +150,7 @@ export function walkStack(
     }
 
     // Warn on slow steps inside loops
-    if (loopDepth > 0 && isSlowRuntimeStep(step.name)) {
+    if (!options.suppressWarnings && !suppressWarnings && loopDepth > 0 && isSlowRuntimeStep(step.name)) {
       node.warning = loopDepth === 1
         ? "Slow step inside loop"
         : `Slow step inside nested loops (depth: ${loopDepth})`;
@@ -118,6 +160,26 @@ export function walkStack(
   }
 
   return nodes;
+}
+
+function hasPerformanceSuppression(step: any): boolean {
+  if (
+    step.ignorePerformance === true ||
+    step.ignore_performance === true ||
+    step.raw?.ignorePerformance === true ||
+    step.raw?.ignore_performance === true ||
+    step.raw?.context?.ignorePerformance === true ||
+    step.raw?.context?.ignore_performance === true
+  ) {
+    return true;
+  }
+
+  return [
+    step.description,
+    step.title,
+    step.raw?.description,
+    step.raw?.context?.description,
+  ].some((value) => typeof value === "string" && value.includes(IGNORE_PERFORMANCE_MARKER));
 }
 
 function isSlowRuntimeStep(name: string): boolean {
@@ -134,12 +196,18 @@ function isSlowRuntimeStep(name: string): boolean {
  */
 export function collectFunctionCalls(
   nodes: StackNode[],
-  acc: Map<number, { name?: string; count: number; totalSecs: number }> = new Map(),
+  acc: Map<number, { name?: string; count: number; retainedStackNodes: number; totalSecs: number }> = new Map(),
 ): FunctionCallSummary[] {
   for (const node of nodes) {
     if (node.function_id != null) {
-      const existing = acc.get(node.function_id) || { name: node.function_name, count: 0, totalSecs: 0 };
+      const existing = acc.get(node.function_id) || {
+        name: node.function_name,
+        count: 0,
+        retainedStackNodes: 0,
+        totalSecs: 0,
+      };
       existing.count++;
+      existing.retainedStackNodes += node.retained_stack_nodes;
       existing.totalSecs += node.rollup_seconds;
       if (node.function_name) existing.name = node.function_name;
       acc.set(node.function_id, existing);
@@ -152,13 +220,21 @@ export function collectFunctionCalls(
     return Array.from(acc.entries())
       .map(([id, info]) => ({
         id,
-        name: info.name,
+        ...(info.name ? { name: info.name } : {}),
         call_count: info.count,
+        retained_stack_nodes: info.retainedStackNodes,
         total_seconds: +info.totalSecs.toFixed(4),
       }))
       .sort((a, b) => b.total_seconds - a.total_seconds);
   }
   return [];
+}
+
+export function countRetainedStackNodes(nodes: StackNode[]): number {
+  return nodes.reduce(
+    (count, node) => count + 1 + node.retained_stack_nodes,
+    0,
+  );
 }
 
 /**
@@ -174,4 +250,39 @@ export function collectWarnings(nodes: StackNode[]): string[] {
     warnings.push(...collectWarnings(node.children));
   }
   return warnings;
+}
+
+/** Aggregate retained runtime nodes by stable xsid (or deterministic position fallback). */
+export function aggregateStackNodes(
+  nodes: StackNode[],
+  acc: Map<string, StackAggregate> = new Map(),
+): Map<string, StackAggregate> {
+  for (const node of nodes) {
+    const key = node._xsid || `pos:${node.position}:${node.name}`;
+    const existing = acc.get(key) || {
+      name: node.name,
+      title: node.title,
+      total_direct_seconds: 0,
+      total_rollup_seconds: 0,
+      occurrences: 0,
+      runtime_count_total: 0,
+      iterations_total: 0,
+      retained_stack_nodes: 0,
+      function_id: node.function_id,
+      function_name: node.function_name,
+      warnings: new Set<string>(),
+    };
+    existing.total_direct_seconds += node.direct_seconds;
+    existing.total_rollup_seconds += node.rollup_seconds;
+    existing.occurrences++;
+    existing.runtime_count_total += node.runtime_count ?? 0;
+    existing.iterations_total += node.iterations ?? 0;
+    existing.retained_stack_nodes += node.retained_stack_nodes;
+    if (node.function_id != null) existing.function_id = node.function_id;
+    if (node.function_name) existing.function_name = node.function_name;
+    if (node.warning) existing.warnings.add(node.warning);
+    acc.set(key, existing);
+    aggregateStackNodes(node.children, acc);
+  }
+  return acc;
 }
