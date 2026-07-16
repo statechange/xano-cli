@@ -7,6 +7,7 @@ import {
   collectWarnings,
   walkStack,
 } from "../src/performance/stack-rollup.js";
+import { buildFunctionIdentityResolver } from "../src/performance/trace-analysis.js";
 
 test("runtime coordinates win and inclusive timing is split into direct and child rollups", () => {
   const [parent, fallback] = walkStack([
@@ -148,4 +149,24 @@ test("runtime cnt stays distinct from retained nodes, loop iterations, and funct
     retained_stack_nodes: 4,
     total_seconds: 0.8,
   }]);
+});
+
+test("function identity refuses ambiguous static xsids and never guesses from title", () => {
+  const resolve = buildFunctionIdentityResolver([
+    { name: "mvp:function", _xsid: "duplicate", context: { function: { id: 1 } } },
+    { name: "mvp:function", _xsid: "duplicate", context: { function: { id: 2 } } },
+  ], new Map([[1, "Same title"], [2, "Same title"]]));
+
+  assert.deepEqual(resolve({ name: "mvp:function", _xsid: "duplicate", title: "Same title" }), {
+    status: "unresolved",
+    runtime_xsid: "duplicate",
+    runtime_title: "Same title",
+    reason: "ambiguous_static_match",
+  });
+  assert.deepEqual(resolve({ name: "mvp:function", _xsid: "missing", title: "Same title" }), {
+    status: "unresolved",
+    runtime_xsid: "missing",
+    runtime_title: "Same title",
+    reason: "missing_static_match",
+  });
 });
