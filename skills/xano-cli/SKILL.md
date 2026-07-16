@@ -71,8 +71,8 @@ npx @statechange/xano-cli performance deep-dive <request-id>           # Single 
 ```
 
 Trace function identities are trustworthy only when `identity.status` is
-`resolved`; runtime IDs are authoritative and exact static `_xsid` matches are
-the fallback. Names are never guessed. Keep unresolved records in the analysis,
+`resolved`; runtime IDs are authoritative and exact, version-aligned static
+`_xsid` matches are the fallback. Names are never guessed. Keep unresolved records in the analysis,
 but do not pass them to `xray function`.
 
 ### Audit — read-only

@@ -461,7 +461,10 @@ export function createPerformanceCommand(
             undefined,
             "",
             functionMap,
-            { suppressWarnings: type === "task", resolveFunctionIdentity },
+            {
+              suppressWarnings: type === "task",
+              resolveFunctionIdentity: (step) => resolveFunctionIdentity(step, detail.created_at),
+            },
           );
           trees.push(tree);
 

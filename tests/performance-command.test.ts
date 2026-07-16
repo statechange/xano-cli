@@ -251,6 +251,7 @@ test("trace resolves endpoint metadata and function identity from the target sta
         id: 695,
         name: "calendar",
         description: "Calendar feed",
+        updated_at: "2026-01-01T00:00:00Z",
         run: [{
           name: "mvp:function",
           _xsid: "function-call",
@@ -261,6 +262,7 @@ test("trace resolves endpoint metadata and function identity from the target sta
     getRequestHistoryForQuery: async () => ({ items: [{ id: 1 }] }),
     getRequest: async () => ({
       id: 1,
+      created_at: "2026-02-01T00:00:00Z",
       duration: 1,
       stack: [{
         name: "mvp:function",
@@ -286,4 +288,16 @@ test("trace resolves endpoint metadata and function identity from the target sta
   assert.equal(output.functions_called[0].identity.status, "resolved");
   assert.equal(output.functions_called[0].identity.id, 516);
   assert.equal(output.functions_called[0].identity.source, "static_xsid");
+});
+
+test("trace remains usable with explicitly unresolved metadata when inventory fails", async () => {
+  const result = await runPerformance(["trace", "endpoint", "695", "--samples", "1", "--format", "json"], {
+    getAPIAppsAndQueries: async () => { throw new Error("inventory unavailable"); },
+    getRequestHistoryForQuery: async () => ({ items: [{ id: 1 }] }),
+    getRequest: async () => ({ id: 1, duration: 1, stack: [] }),
+    getFunctions: async () => { throw new Error("functions unavailable"); },
+  });
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.target.metadata_status, "unresolved");
+  assert.equal(output.samples, 1);
 });

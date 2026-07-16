@@ -16,23 +16,24 @@ export type FunctionIdentity =
       status: "unresolved";
       runtime_xsid?: string;
       runtime_title?: string;
-      reason: "missing_static_match" | "ambiguous_static_match";
+      reason: "missing_static_match" | "ambiguous_static_match" | "static_definition_not_version_aligned";
     };
 
 /**
  * Resolve runtime function steps only from explicit runtime IDs or an exact,
- * unambiguous `_xsid` match in the target/function static definitions. Titles
- * are display-only because names are not unique identifiers in Xano.
+ * unambiguous `_xsid` match in a static definition that is no newer than the
+ * execution. Titles are display-only because names are not unique identifiers
+ * in Xano, and current definitions cannot identify older executions safely.
  */
 export function buildFunctionIdentityResolver(
   staticSources: any[],
   functionNames: Map<number, string>,
-): (step: any) => FunctionIdentity | undefined {
-  const idsByXsid = new Map<string, Set<number>>();
+): (step: any, executedAt?: string) => FunctionIdentity | undefined {
+  const candidatesByXsid = new Map<string, Array<{ id: number; updatedAt?: number }>>();
 
-  const visit = (value: any): void => {
+  const visit = (value: any, sourceUpdatedAt?: number): void => {
     if (Array.isArray(value)) {
-      for (const item of value) visit(item);
+      for (const item of value) visit(item, sourceUpdatedAt);
       return;
     }
     if (!value || typeof value !== "object") return;
@@ -40,16 +41,19 @@ export function buildFunctionIdentityResolver(
     if (value.name === "mvp:function" && typeof value._xsid === "string") {
       const id = Number(value.context?.function?.id);
       if (Number.isInteger(id) && id > 0) {
-        const ids = idsByXsid.get(value._xsid) ?? new Set<number>();
-        ids.add(id);
-        idsByXsid.set(value._xsid, ids);
+        const candidates = candidatesByXsid.get(value._xsid) ?? [];
+        candidates.push({ id, updatedAt: sourceUpdatedAt });
+        candidatesByXsid.set(value._xsid, candidates);
       }
     }
-    for (const child of Object.values(value)) visit(child);
+    for (const child of Object.values(value)) visit(child, sourceUpdatedAt);
   };
-  for (const source of staticSources) visit(source);
+  for (const source of staticSources) {
+    const timestamp = Date.parse(source?.updated_at);
+    visit(source, Number.isFinite(timestamp) ? timestamp : undefined);
+  }
 
-  return (step: any): FunctionIdentity | undefined => {
+  return (step: any, executedAt?: string): FunctionIdentity | undefined => {
     if (step?.name !== "mvp:function") return undefined;
     const rawId = Number(step.raw?.context?.function?.id);
     if (Number.isInteger(rawId) && rawId > 0) {
@@ -61,9 +65,26 @@ export function buildFunctionIdentityResolver(
       };
     }
 
-    const ids = typeof step._xsid === "string" ? idsByXsid.get(step._xsid) : undefined;
-    if (ids?.size === 1) {
-      const id = Array.from(ids)[0];
+    const candidates = typeof step._xsid === "string" ? candidatesByXsid.get(step._xsid) : undefined;
+    const ids = new Set(candidates?.map((candidate) => candidate.id) ?? []);
+    if (ids.size > 1) {
+      return unresolvedIdentity(step, "ambiguous_static_match");
+    }
+    if (ids.size === 1) {
+      const executionTimestamp = Date.parse(executedAt ?? "");
+      const alignedIds = new Set(
+        candidates
+          ?.filter((candidate) => (
+            candidate.updatedAt != null &&
+            Number.isFinite(executionTimestamp) &&
+            candidate.updatedAt <= executionTimestamp
+          ))
+          .map((candidate) => candidate.id),
+      );
+      if (alignedIds.size !== 1) {
+        return unresolvedIdentity(step, "static_definition_not_version_aligned");
+      }
+      const id = Array.from(alignedIds)[0];
       return {
         status: "resolved",
         id,
@@ -71,12 +92,19 @@ export function buildFunctionIdentityResolver(
         source: "static_xsid",
       };
     }
-    return {
-      status: "unresolved",
-      ...(typeof step._xsid === "string" ? { runtime_xsid: step._xsid } : {}),
-      ...(typeof step.title === "string" ? { runtime_title: step.title } : {}),
-      reason: ids && ids.size > 1 ? "ambiguous_static_match" : "missing_static_match",
-    };
+    return unresolvedIdentity(step, "missing_static_match");
+  };
+}
+
+function unresolvedIdentity(
+  step: any,
+  reason: Extract<FunctionIdentity, { status: "unresolved" }>["reason"],
+): FunctionIdentity {
+  return {
+    status: "unresolved",
+    ...(typeof step._xsid === "string" ? { runtime_xsid: step._xsid } : {}),
+    ...(typeof step.title === "string" ? { runtime_title: step.title } : {}),
+    reason,
   };
 }
 
@@ -87,14 +115,18 @@ export async function resolveTraceTarget(
   type: TraceTargetType,
   id: number,
 ): Promise<{ target: TraceTarget; source: any }> {
-  let objects: any[];
-  if (type === "endpoint") {
-    const payload = await client.getAPIAppsAndQueries(workspace, branchId);
-    objects = payload.queries ?? [];
-  } else if (type === "task") {
-    objects = await client.getTasks(workspace, branchId);
-  } else {
-    objects = await client.getTriggers(workspace, branchId);
+  let objects: any[] = [];
+  try {
+    if (type === "endpoint") {
+      const payload = await client.getAPIAppsAndQueries(workspace, branchId);
+      objects = payload.queries ?? [];
+    } else if (type === "task") {
+      objects = await client.getTasks(workspace, branchId);
+    } else {
+      objects = await client.getTriggers(workspace, branchId);
+    }
+  } catch {
+    // Metadata enriches the trace but is not required to analyze history.
   }
   const source = objects.find((item: any) => Number(item.id) === id);
   return {

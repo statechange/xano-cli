@@ -170,3 +170,20 @@ test("function identity refuses ambiguous static xsids and never guesses from ti
     reason: "missing_static_match",
   });
 });
+
+test("static function identity is unresolved when the definition is newer than the execution", () => {
+  const resolve = buildFunctionIdentityResolver([{
+    updated_at: "2026-07-16T12:00:00Z",
+    run: [{ name: "mvp:function", _xsid: "call", context: { function: { id: 42 } } }],
+  }], new Map([[42, "Current helper"]]));
+
+  assert.deepEqual(resolve(
+    { name: "mvp:function", _xsid: "call", title: "Historical helper" },
+    "2026-07-15T12:00:00Z",
+  ), {
+    status: "unresolved",
+    runtime_xsid: "call",
+    runtime_title: "Historical helper",
+    reason: "static_definition_not_version_aligned",
+  });
+});
