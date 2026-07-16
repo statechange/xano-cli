@@ -187,3 +187,26 @@ test("static function identity is unresolved when the definition is newer than t
     reason: "static_definition_not_version_aligned",
   });
 });
+
+test("static identity normalizes epoch timestamps and filters newer candidates before ambiguity", () => {
+  const resolve = buildFunctionIdentityResolver([
+    {
+      updated_at: 1_700_000_000,
+      run: [{ name: "mvp:function", _xsid: "call", context: { function: { id: 1 } } }],
+    },
+    {
+      updated_at: 1_800_000_000_000,
+      run: [{ name: "mvp:function", _xsid: "call", context: { function: { id: 2 } } }],
+    },
+  ], new Map([[1, "Historical helper"], [2, "Future helper"]]));
+
+  assert.deepEqual(resolve(
+    { name: "mvp:function", _xsid: "call" },
+    "1750000000",
+  ), {
+    status: "resolved",
+    id: 1,
+    name: "Historical helper",
+    source: "static_xsid",
+  });
+});

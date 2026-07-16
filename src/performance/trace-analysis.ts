@@ -49,8 +49,7 @@ export function buildFunctionIdentityResolver(
     for (const child of Object.values(value)) visit(child, sourceUpdatedAt);
   };
   for (const source of staticSources) {
-    const timestamp = Date.parse(source?.updated_at);
-    visit(source, Number.isFinite(timestamp) ? timestamp : undefined);
+    visit(source, normalizeTimestamp(source?.updated_at));
   }
 
   return (step: any, executedAt?: string): FunctionIdentity | undefined => {
@@ -67,21 +66,19 @@ export function buildFunctionIdentityResolver(
 
     const candidates = typeof step._xsid === "string" ? candidatesByXsid.get(step._xsid) : undefined;
     const ids = new Set(candidates?.map((candidate) => candidate.id) ?? []);
-    if (ids.size > 1) {
-      return unresolvedIdentity(step, "ambiguous_static_match");
-    }
-    if (ids.size === 1) {
-      const executionTimestamp = Date.parse(executedAt ?? "");
-      const alignedIds = new Set(
-        candidates
-          ?.filter((candidate) => (
-            candidate.updatedAt != null &&
-            Number.isFinite(executionTimestamp) &&
-            candidate.updatedAt <= executionTimestamp
-          ))
-          .map((candidate) => candidate.id),
-      );
-      if (alignedIds.size !== 1) {
+    if (ids.size > 0) {
+      const executionTimestamp = normalizeTimestamp(executedAt);
+      const alignedIds = new Set(candidates
+        ?.filter((candidate) => (
+          candidate.updatedAt != null &&
+          executionTimestamp != null &&
+          candidate.updatedAt <= executionTimestamp
+        ))
+        .map((candidate) => candidate.id));
+      if (alignedIds.size > 1 || (executionTimestamp == null && ids.size > 1)) {
+        return unresolvedIdentity(step, "ambiguous_static_match");
+      }
+      if (alignedIds.size === 0) {
         return unresolvedIdentity(step, "static_definition_not_version_aligned");
       }
       const id = Array.from(alignedIds)[0];
@@ -94,6 +91,20 @@ export function buildFunctionIdentityResolver(
     }
     return unresolvedIdentity(step, "missing_static_match");
   };
+}
+
+/** Xano timestamps appear as ISO strings, epoch seconds, or epoch millis. */
+function normalizeTimestamp(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+  const numeric = typeof value === "number"
+    ? value
+    : (typeof value === "string" && /^\d+(?:\.\d+)?$/.test(value) ? Number(value) : undefined);
+  if (numeric != null && Number.isFinite(numeric)) {
+    return Math.abs(numeric) < 1e12 ? numeric * 1000 : numeric;
+  }
+  if (typeof value !== "string") return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function unresolvedIdentity(
