@@ -19,6 +19,25 @@ The connection layer must keep requested identity, credential identity, request 
 - `src/documentation/` exports workspace objects as Markdown using sink data and `@statechange/xano-xray` step analysis.
 - `src/performance/load-analysis.ts` aggregates execution history into request, trigger, task, and MCP performance summaries.
 
+## Runtime performance analysis
+
+`performance deep-dive` fetches one request detail and uses
+`src/performance/stack-rollup.ts` to produce a recursive timing tree.
+`performance trace` fetches endpoint, task, or trigger history and uses
+`src/performance/trace-analysis.ts` to produce target metadata, duration
+percentiles, structural ancestry, additive flat hotspots, conservative function
+identity and single-target ROI, plus high-confidence actionable issues. Runtime
+`timing` is inclusive; direct time subtracts child rollups.
+
+Runtime coordinates and IDs are used only when the payload supports them.
+Fallback positions are deterministic, static function identity must be exact,
+unambiguous, and version-aligned, and missing facts remain explicitly
+unresolved. Runtime counts, retained nodes, loop iterations, and function
+invocations stay distinct; truncation marks retained counts incomplete.
+`TRACE-DEEP-DIVE-PLAN.md` records the payload boundary and design history,
+including the hardening completed in issues #9 and #10. README and the bundled
+performance skill are the current behavior reference.
+
 ## Data-access constraints
 
 - Prefer sink/list endpoints and select objects locally. Individual-object admin endpoints are unreliable on custom domains.
@@ -28,11 +47,12 @@ The connection layer must keep requested identity, credential identity, request 
 
 ## XanoScript export boundary
 
-XanoScript generation calls `api:mvp-admin/mvp/xs` after loading objects from the relevant sink. Today, bulk exports write beneath a directory for one selected concrete type and derive filenames directly from sanitized object names, so collisions can overwrite earlier files. Issues #1 and #3 establish the target: the concrete type registry will drive validation, help, and complete-export iteration, and filename allocation will become a separate deterministic, testable contract that never overwrites an earlier successful export.
+XanoScript generation calls `api:mvp-admin/mvp/xs` after loading objects from the relevant sink. Bulk export behavior and its verification contract are documented with the command implementation and tests.
 
 ## Build and verification
 
 - `npm run build` compiles TypeScript to `dist/`.
 - `npm start -- <command>` runs the compiled CLI.
 - `npx tsx src/index.ts <command>` runs from source.
-- The repository is adding behavioral tests around connection selection and XanoScript export under issues #1-#3; until those land, the TypeScript build and targeted live read-only commands are the executable verification surfaces.
+- `npm test` runs the behavioral test suite.
+- Targeted live read-only commands remain the executable verification surface for external Xano payload behavior that fixtures cannot establish.

@@ -1,272 +1,132 @@
-# Performance Trace & Deep-Dive Initiative
+# Performance Trace and Deep-Dive: Status and Design History
 
-## Context
+This document records what shipped from the original performance-tracing plan
+and where the implementation intentionally differs. It is not an implementation
+checklist or field reference. Current behavior lives in [README](README.md) and
+the [bundled performance skill](skills/performance-analysis/SKILL.md);
+implementation lives in `src/commands/performance.ts`,
+`src/performance/stack-rollup.ts`, and `src/performance/trace-analysis.ts`.
 
-The Xano CLI (`@statechange/xano-cli`) already provides `performance top-endpoints` (aggregate endpoint timing) and `performance scan-functions` (static X-Ray analysis for nested slow steps). But the real power is in the **runtime stack traces** — every request/task/trigger execution includes a recursive tree of steps with per-step timing, step types, and function references.
+## Status snapshot
 
-An AI agent can do what the browser UI can't: analyze many executions in aggregate, cross-reference function usage across callers, and recommend specific fixes with XanoScript context.
+The command core shipped in commit
+[`1a63a35`](https://github.com/statechange/xano-cli/commit/1a63a359798621ff60c089cf9e5a692122fea2f7)
+on March 7, 2026. Correctness hardening shipped through
+[#9](https://github.com/statechange/xano-cli/issues/9), and trace enrichment
+shipped through [#10](https://github.com/statechange/xano-cli/issues/10), both
+closed on July 16, 2026.
 
-## What's in a Stack Trace
+| Original deliverable | Status | Current boundary |
+| --- | --- | --- |
+| Reusable runtime stack walker | **Shipped, intentionally changed** | `walkStack()` produces a recursive tree instead of reproducing the extension's flat `_xsid`-keyed `perfByXsid()` output. |
+| `performance deep-dive <request-id>` | **Shipped** | Expands one request with tested inclusive/direct timing, runtime-or-fallback coordinates, count semantics, warnings, and truncation context. |
+| `performance trace <type> <id>` | **Shipped** | Supports endpoint, task, and trigger history with target metadata, percentiles, ancestry, additive hotspots, function summaries, truncation context, and actionable issues. |
+| Function-name enrichment | **Shipped, intentionally conservative** | Runtime IDs win. Static `_xsid` identity resolves only when exact, unambiguous, and version-aligned; otherwise the call remains explicitly unresolved. |
+| Nested slow-step warnings | **Shipped, intentionally changed** | Runtime warnings use tested loop ancestry and available suppression metadata rather than promising every static `xano-xray` warning. |
+| AI performance-analysis skill | **Shipped** | `skills/performance-analysis/SKILL.md` documents the current workflow and its reliable-identity boundary. |
+| Cross-target function ROI | **Intentionally changed** | Trace reports ROI metrics and caller scope for one target. It does not fabricate workspace-wide callers; a future workspace scan would require a new issue. |
+| Discriminating rollup/count/truncation/suppression tests | **Shipped** | Added by [#9](https://github.com/statechange/xano-cli/issues/9) and extended by [#10](https://github.com/statechange/xano-cli/issues/10). |
 
-Each execution's `stack` is a recursive tree:
+## Current commands
 
-```
-stack[]:
-  - name: "mvp:function"          # step type
-    _xsid: "abc123"               # links to X-Ray step definition
-    title: "validate_token"       # human-readable name
-    timing: 0.45                  # seconds spent in this step
-    stack_id: "def456"            # parent context
-    cnt: 1                        # execution count (for loops)
-    stack[]:                      # nested child steps
-      - name: "mvp:dbo_view"
-        timing: 0.38
-        stack: []
-```
-
-### Step Types (from xano-xray library)
-
-| Type | Category | Performance Impact |
-|------|----------|-------------------|
-| `mvp:dbo_view` | DB query (list) | Slow — returns multiple rows |
-| `mvp:dbo_getby` | DB query (single) | Moderate |
-| `mvp:dbo_add/editby/patch` | DB write | Moderate |
-| `mvp:dbo_direct_query` | Raw SQL | Variable |
-| `mvp:function` | Custom function call | Variable — expands to nested stack |
-| `mvp:api_request` | External API call | Slow — network bound |
-| `mvp:lambda` | Lambda/code block | Slow — interpreted |
-| `mvp:foreach/for/while` | Loop | Multiplier — children execute N times |
-| `mvp:conditional/switch` | Branching | Neutral |
-| `mvp:try_catch` | Error handling | Neutral |
-| `mvp:set_var/update_var` | Variable ops | Fast |
-| `mvp:precondition` | Validation | Fast |
-| `mvp:group` | Step group | Container |
-| `mvp:db_transaction` | DB transaction | Container |
-
-### Key Fields for Analysis
-
-- `raw.context.function.id` — when step is `mvp:function`, references which custom function was called
-- `position2` — dot-separated position accounting for conditionals/loops (e.g., "1.2.if.1.3")
-- `timing` — direct time for this step
-- Rollup time = step timing + sum of all nested child timings
-- `cnt` — iteration count for loop steps
-
-### Performance Markers in Descriptions
-
-- `#ignore-performance` — author has opted out of performance warnings for this step
-- Tasks have `ignorePerformance = true` by default
-
-## New CLI Commands
-
-### `performance trace`
-
-**Purpose:** Fetch N recent executions for an endpoint/task/trigger, walk all stack trees, and produce an aggregate step-by-step breakdown.
-
-```bash
-# Trace an API endpoint by query ID
-sc-xano performance trace endpoint <query-id> [--samples 20]
-
-# Trace a task
-sc-xano performance trace task <task-id> [--samples 20]
-
-# Trace a trigger
-sc-xano performance trace trigger <trigger-id> [--samples 20]
-
-# Output as yaml for AI consumption
-sc-xano performance trace endpoint 123 --format yaml
-```
-
-**What it produces:**
-
-```yaml
-endpoint:
-  id: 123
-  name: "GET /api:foo/users"
-  description: "List users with filters"
-samples: 20
-avg_duration_seconds: 2.34
-p95_duration_seconds: 4.12
-
-# Aggregated step breakdown across all samples
-step_breakdown:
-  - step_type: mvp:foreach
-    position: "3"
-    avg_timing_seconds: 1.89
-    pct_of_total: 80.8
-    avg_iterations: 47
-    children:
-      - step_type: mvp:function
-        function_id: 246
-        function_name: "validate_token"
-        avg_timing_seconds: 0.038
-        total_across_iterations: 1.79
-        pct_of_parent: 94.7
-        children:
-          - step_type: mvp:dbo_view
-            avg_timing_seconds: 0.035
-            pct_of_parent: 92.1
-            warning: "DB query inside nested loop (depth 2)"
-
-# Functions called (cross-referenced with inventory)
-functions_called:
-  - id: 246
-    name: "validate_token"
-    call_count_per_request: 47
-    avg_time_per_call: 0.038
-    total_time_pct: 76.5
-    callers:
-      - "GET /api:foo/users (query 123)"
-      - "POST /api:foo/orders (query 456)"
-
-# Identified issues
-issues:
-  - severity: high
-    description: "DB query mvp:dbo_view at position 3.1.2 runs inside foreach loop averaging 47 iterations"
-    suggestion: "Move query outside the loop or use a batch query"
-    function_id: 246
-    function_name: "validate_token"
-```
-
-**Implementation approach:**
-1. Fetch recent history for the endpoint/task/trigger (reuse existing history APIs)
-2. For each execution, fetch full request detail (which includes `stack`)
-3. Recursively walk all stack trees, accumulating per-step timing stats
-4. Cross-reference `mvp:function` steps with the functions sink to resolve names
-5. Use `nestingLevel()` from xano-xray to identify loop-nested slow steps
-6. Compute percentiles (p50, p95, p99) across samples
-
-### `performance deep-dive`
-
-**Purpose:** Fully expand a single request's stack tree with timing rollups.
+### Single-request deep dive
 
 ```bash
 sc-xano performance deep-dive <request-id> --format yaml
 ```
 
-**What it produces:**
+The command fetches a request detail, recursively walks `stack`, and emits:
 
-```yaml
-request:
-  id: 8293342
-  verb: GET
-  uri: "https://instance/api:foo/users"
-  status: 200
-  duration_seconds: 2.34
-  created_at: "2026-03-05 12:57:11+0000"
+- request metadata and `stack_truncated` from `stack_maxed`;
+- a recursive stack tree with authoritative-or-fallback positions, direct and
+  rollup seconds, percentages, retained-node and runtime counts, loop
+  iterations, and warnings;
+- function summaries for reliably resolved calls.
 
-stack:
-  - position: "1"
-    name: mvp:set_var
-    title: "Initialize vars"
-    direct_seconds: 0.001
-    rollup_seconds: 0.001
-    pct_of_total: 0.04
+### Multi-request trace
 
-  - position: "2"
-    name: mvp:dbo_view
-    title: "Get all users"
-    direct_seconds: 0.12
-    rollup_seconds: 0.12
-    pct_of_total: 5.1
-
-  - position: "3"
-    name: mvp:foreach
-    title: "Process each user"
-    iterations: 47
-    direct_seconds: 0.01
-    rollup_seconds: 1.89
-    pct_of_total: 80.8
-    children:
-      - position: "3.1"
-        name: mvp:function
-        function_id: 246
-        function_name: "validate_token"
-        direct_seconds: 0.003
-        rollup_seconds: 0.038
-        pct_of_parent: 94.7
-        children:
-          - position: "3.1.1"
-            name: mvp:dbo_view
-            direct_seconds: 0.035
-            rollup_seconds: 0.035
-            warning: "Slow step inside loop (nesting depth: 2)"
-
-  - position: "4"
-    name: mvp:set_var
-    title: "Build response"
-    direct_seconds: 0.002
-    rollup_seconds: 0.002
-    pct_of_total: 0.09
+```bash
+sc-xano performance trace endpoint <query-id> --samples 20 --format yaml
+sc-xano performance trace task <task-id> --samples 20 --format yaml
+sc-xano performance trace trigger <trigger-id> --samples 20 --format yaml
 ```
 
-**Implementation approach:**
-1. Fetch request detail via existing `getRequest(id)` API
-2. Port the `perfByXsid()` rollup logic from the extension (`src/content/performance.ts`)
-3. Recursively walk the stack, computing direct vs rollup timing
-4. Resolve function IDs to names via the cached functions sink
-5. Apply xano-xray warnings for nested slow steps
+The command fetches recent history and the corresponding request/task details,
+then emits target metadata, sample count, average and p50/p95/p99 duration,
+structural ancestry, flat additive hotspots, resolved or unresolved function
+summaries, and high-confidence actionable issues.
 
-## AI Analysis Skill
+## Verified payload boundary
 
-A skill file (`skills/performance-analysis.md`) that teaches AI agents to chain these tools:
+The original plan treated several fields as universally available and described
+`timing` as direct time. Neither assumption is an honest current contract.
 
-### Workflow: "Why is my workspace slow?"
+- **`timing` is inclusive.** The walker derives direct time by subtracting child
+  rollups and clamps negative clock/rounding residue. Nested and zero-duration
+  fixtures cover this contract.
+- **`position2` and `position` are optional runtime coordinates.** The walker
+  prefers `position2`, then `position`, and uses deterministic tree positions
+  when live payloads omit both.
+- **`raw.context.function.id` is optional, not authoritative.** A read-only
+  workspace-19 request probe recorded in [#10](https://github.com/statechange/xano-cli/issues/10)
+  contained an `mvp:function` node titled `Circle Authenticated Request` but no
+  `raw` field. Trace now attempts an exact, unambiguous, version-aligned static
+  `_xsid` match and emits explicit unresolved identity when no safe ID exists.
+- **`cnt` and retained child nodes describe different quantities.** A live
+  workspace-19 request recorded in [#9](https://github.com/statechange/xano-cli/issues/9)
+  had `cnt: 270` and `stack_maxed: true`. Output now separates runtime counts,
+  loop iterations, retained nodes, and function invocations, and marks counts
+  incomplete when samples are truncated.
+- **Performance suppression depends on available metadata.**
+  `#ignore-performance`, explicit suppression flags, and task-wide opt-out are
+  honored when exposed. The CLI does not infer author-side suppression when
+  Xano omits the metadata.
+- **Task history is a separate payload path.** Trace uses task-history detail
+  rather than request detail. Any absence of stack data must be represented as
+  a task limitation, not inferred to match endpoint payloads. Target metadata
+  and duration percentiles remain useful even when structural sections are empty.
 
+## Historical target contract outcome
+
+The richer contract preserved from the original plan was resolved as follows:
+
+- **Shipped:** ancestry and flat hotspots, target metadata, authoritative or
+  fallback coordinates, distinct count semantics, tested direct/inclusive time,
+  truncation completeness, conservative function identity, single-target ROI
+  metrics, and actionable issues with supported suppression.
+- **Intentionally changed:** hotspots use exclusive/direct percentages so they
+  remain additive; function callers are scoped to the traced target rather than
+  claiming a workspace-wide scan.
+- **Accepted external limitation:** task history can lack retained stack data,
+  and runtime payloads can lack identity or suppression metadata. Output stays
+  explicit rather than inventing those facts.
+
+## Analysis workflow
+
+The currently valid sequence is:
+
+```text
+1. performance top-endpoints
+2. performance trace endpoint <id>
+3. performance deep-dive <request-id>
+4. xray function --id <id>       # only when a reliable function ID exists
+5. xanoscript generate function <id>
 ```
-1. sc-xano performance top-endpoints --format yaml --lookback 24
-   → Identifies which endpoints consume the most total time
 
-2. sc-xano performance trace endpoint <worst-id> --format yaml --samples 20
-   → Shows aggregate step breakdown, identifies hot functions and nested issues
+Trace supports function optimization within the selected target. Cross-target
+caller analysis remains outside this command's scope.
 
-3. sc-xano performance deep-dive <worst-request-id> --format yaml
-   → Full stack expansion of the slowest individual request
+## Design history
 
-4. sc-xano xray function --id <hot-function-id> --format yaml
-   → X-Ray analysis of the problematic function (static step warnings)
+The initial implementation order was:
 
-5. sc-xano xanoscript generate function <hot-function-id>
-   → Generate XanoScript source to understand and recommend fixes
-```
+1. port the extension rollup idea into a reusable CLI utility;
+2. ship a single-request deep dive;
+3. build multi-request trace aggregation;
+4. document the agent workflow;
+5. refine the contract against real payloads.
 
-### Workflow: "Why do I get errors?"
-
-```
-1. sc-xano history requests --format yaml
-   → Find requests with error status codes
-
-2. sc-xano performance deep-dive <error-request-id> --format yaml
-   → See which step in the stack failed and what the error path looks like
-
-3. sc-xano xray function --id <failing-function-id> --format yaml
-   → Check for try/catch coverage, precondition issues
-```
-
-### Workflow: "Which functions should I optimize first?"
-
-```
-1. sc-xano performance top-endpoints --format yaml --lookback 24
-   → Get endpoint ranking by total time
-
-2. For each of the top 5 endpoints:
-   sc-xano performance trace endpoint <id> --format yaml
-   → Aggregate analysis reveals shared slow functions
-
-3. Rank functions by: (avg_time_per_call × call_count × number_of_callers)
-   → This gives "optimization ROI" — fixing one function improves many endpoints
-```
-
-## Dependencies
-
-- Existing APIs: `getRequest(id)` returns full `stack` data, `getRequestHistoryForQuery(queryId)` for per-endpoint history
-- xano-xray library: `nestingLevel()`, `isSlowStep()`, `getStepWarnings()`, `buildStepListFromXray()`
-- Functions sink (cached): for resolving function IDs to names
-- The `perfByXsid()` rollup logic needs to be ported from `src/content/performance.ts` to a shared utility
-
-## Implementation Order
-
-1. **Port `perfByXsid` rollup logic** to a reusable utility in the CLI
-2. **`performance deep-dive`** — single request stack expansion (simpler, tests the rollup logic)
-3. **`performance trace`** — multi-request aggregation (builds on deep-dive)
-4. **Skills file** — document the analysis workflows for AI agents
-5. **Iterate** — test with real data, refine the output format based on what's most useful for AI reasoning
+Steps 1-4 shipped together in `1a63a35`. Step 1 deliberately became a recursive
+tree walker rather than a literal port. Step 5 exposed the payload and semantic
+gaps later closed by #9 and #10. New work should be captured in a new issue
+rather than treating this historical plan as an executable queue.
