@@ -23,11 +23,12 @@ The connection layer must keep requested identity, credential identity, request 
 
 `performance deep-dive` fetches one request detail and uses
 `src/performance/stack-rollup.ts` to produce a recursive timing tree.
-`performance trace` fetches endpoint, task, or trigger history and uses
-`src/performance/trace-analysis.ts` to produce target metadata, duration
-percentiles, structural ancestry, additive flat hotspots, conservative function
-identity and single-target ROI, plus high-confidence actionable issues. Runtime
-`timing` is inclusive; direct time subtracts child rollups.
+`performance trace` fetches endpoint, task, or trigger history, computes duration
+percentiles in the command layer, and uses `src/performance/trace-analysis.ts`
+for target metadata, structural ancestry, conservative function identity and
+single-target ROI, plus high-confidence actionable issues. The command derives
+additive flat hotspots from stack aggregates. Runtime `timing` is inclusive;
+direct time subtracts child rollups.
 
 Runtime coordinates and IDs are used only when the payload supports them.
 Fallback positions are deterministic, static function identity must be exact,

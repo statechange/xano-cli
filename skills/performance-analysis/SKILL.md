@@ -30,7 +30,7 @@ npx @statechange/xano-cli performance trace task <task-id> --samples 10 --format
 npx @statechange/xano-cli performance trace trigger <trigger-id> --samples 10 --format yaml
 ```
 
-**Note:** Task history items don't include stack traces (Xano API limitation). Trace will show duration percentiles but no step breakdown for tasks.
+**Note:** Current task history commonly returns duration without retained stack data. In that case trace still reports target metadata and duration percentiles, while ancestry, hotspots, functions, and issues are empty.
 
 The trace output shows:
 - **Duration percentiles** (avg, p50, p95, p99) across samples
