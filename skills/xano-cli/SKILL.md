@@ -70,6 +70,11 @@ npx @statechange/xano-cli performance trace trigger <trigger-id>
 npx @statechange/xano-cli performance deep-dive <request-id>           # Single request stack expansion
 ```
 
+Trace function identities are trustworthy only when `identity.status` is
+`resolved`; runtime IDs are authoritative and exact, version-aligned static
+`_xsid` matches are the fallback. Names are never guessed. Keep unresolved records in the analysis,
+but do not pass them to `xray function`.
+
 ### Audit — read-only
 
 ```bash
@@ -196,6 +201,7 @@ npx @statechange/xano-cli inventory workspace
 npx @statechange/xano-cli performance top-endpoints --lookback 24 --format yaml
 npx @statechange/xano-cli performance trace endpoint <worst-id> --format yaml
 npx @statechange/xano-cli performance deep-dive <request-id> --format yaml
+# Only when trace reports identity.status: resolved (or another source gives an authoritative ID):
 npx @statechange/xano-cli xray function --id <function-id> --format yaml
 ```
 

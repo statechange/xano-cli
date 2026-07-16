@@ -34,8 +34,10 @@ npx @statechange/xano-cli performance trace trigger <trigger-id> --samples 10 --
 
 The trace output shows:
 - **Duration percentiles** (avg, p50, p95, p99) across samples
-- **Step breakdown** aggregated by `_xsid` — which steps consume the most time across all executions
-- **Functions called** — which custom functions are invoked and how often
+- **Ancestry** — full paths and parent contribution without flattening structural causes
+- **Hotspots** aggregated by `_xsid` — additive exclusive `pct_of_total` plus separate inclusive rollups
+- **Functions called** — resolved or explicitly unresolved identity, calls/request, seconds/call, and percentage of this target's sampled request time
+- **Issues** — high-confidence slow DB/external/lambda work inside loops, with evidence paths and suggestions
 - Steps with high `occurrences` relative to `samples` indicate they run inside loops
 
 ### Step 3: Deep-dive a single request
@@ -81,20 +83,18 @@ npx @statechange/xano-cli performance deep-dive <error-request-id> --format yaml
 npx @statechange/xano-cli xray function --id <failing-function-id> --format yaml
 ```
 
-## Workflow: "Which functions should I optimize first?"
+## Workflow: "Which function in this target should I optimize first?"
 
 ```bash
 # 1. Get endpoint ranking
 npx @statechange/xano-cli performance top-endpoints --lookback 24 --format yaml
 
-# 2. Trace the top 3-5 endpoints
-npx @statechange/xano-cli performance trace endpoint <id1> --format yaml
-npx @statechange/xano-cli performance trace endpoint <id2> --format yaml
-npx @statechange/xano-cli performance trace endpoint <id3> --format yaml
+# 2. Trace one target and inspect functions_called
+npx @statechange/xano-cli performance trace endpoint <id> --format yaml
 
-# 3. Look at functions_called across all traces
-# Rank by: avg_seconds_per_call x total_calls x number_of_callers
-# This gives "optimization ROI" — fixing one function improves many endpoints
+# 3. Rank within this target by pct_of_total_request_time, calls_per_request,
+# and seconds_per_call. caller_scope is single_target: this command does not
+# scan the workspace or claim that a function improves other endpoints.
 ```
 
 ## Handling truncated stacks
@@ -122,7 +122,7 @@ npx @statechange/xano-cli logs set endpoint <id> --limit 100
 
 - **High `direct_seconds` with no children** — the step itself is slow (external API call, lambda, complex query)
 - **Low `direct_seconds` but high `rollup_seconds`** — children are slow, drill deeper
-- **Same `_xsid` with high `occurrences`** in trace — step runs inside a loop. Multiply `avg_rollup_seconds` by occurrences/samples to get per-request impact
+- **Same `_xsid` with high `occurrences`** in trace — step is retained repeatedly, often inside a loop. Use `total_rollup_seconds`, `avg_invocations_per_request`, and loop ancestry; do not multiply inclusive parent and child time together
 - **DB queries inside loops** (warnings) — classic N+1 problem. Move the query outside the loop or use a batch query
 - **Lambda steps with high timing** — interpreted code blocks are slower than native Xano steps
 

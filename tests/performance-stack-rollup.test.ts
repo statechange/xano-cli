@@ -7,6 +7,7 @@ import {
   collectWarnings,
   walkStack,
 } from "../src/performance/stack-rollup.js";
+import { buildFunctionIdentityResolver } from "../src/performance/trace-analysis.js";
 
 test("runtime coordinates win and inclusive timing is split into direct and child rollups", () => {
   const [parent, fallback] = walkStack([
@@ -148,4 +149,64 @@ test("runtime cnt stays distinct from retained nodes, loop iterations, and funct
     retained_stack_nodes: 4,
     total_seconds: 0.8,
   }]);
+});
+
+test("function identity refuses ambiguous static xsids and never guesses from title", () => {
+  const resolve = buildFunctionIdentityResolver([
+    { name: "mvp:function", _xsid: "duplicate", context: { function: { id: 1 } } },
+    { name: "mvp:function", _xsid: "duplicate", context: { function: { id: 2 } } },
+  ], new Map([[1, "Same title"], [2, "Same title"]]));
+
+  assert.deepEqual(resolve({ name: "mvp:function", _xsid: "duplicate", title: "Same title" }), {
+    status: "unresolved",
+    runtime_xsid: "duplicate",
+    runtime_title: "Same title",
+    reason: "ambiguous_static_match",
+  });
+  assert.deepEqual(resolve({ name: "mvp:function", _xsid: "missing", title: "Same title" }), {
+    status: "unresolved",
+    runtime_xsid: "missing",
+    runtime_title: "Same title",
+    reason: "missing_static_match",
+  });
+});
+
+test("static function identity is unresolved when the definition is newer than the execution", () => {
+  const resolve = buildFunctionIdentityResolver([{
+    updated_at: "2026-07-16T12:00:00Z",
+    run: [{ name: "mvp:function", _xsid: "call", context: { function: { id: 42 } } }],
+  }], new Map([[42, "Current helper"]]));
+
+  assert.deepEqual(resolve(
+    { name: "mvp:function", _xsid: "call", title: "Historical helper" },
+    "2026-07-15T12:00:00Z",
+  ), {
+    status: "unresolved",
+    runtime_xsid: "call",
+    runtime_title: "Historical helper",
+    reason: "static_definition_not_version_aligned",
+  });
+});
+
+test("static identity normalizes epoch timestamps and filters newer candidates before ambiguity", () => {
+  const resolve = buildFunctionIdentityResolver([
+    {
+      updated_at: 1_700_000_000,
+      run: [{ name: "mvp:function", _xsid: "call", context: { function: { id: 1 } } }],
+    },
+    {
+      updated_at: 1_800_000_000_000,
+      run: [{ name: "mvp:function", _xsid: "call", context: { function: { id: 2 } } }],
+    },
+  ], new Map([[1, "Historical helper"], [2, "Future helper"]]));
+
+  assert.deepEqual(resolve(
+    { name: "mvp:function", _xsid: "call" },
+    "1750000000",
+  ), {
+    status: "resolved",
+    id: 1,
+    name: "Historical helper",
+    source: "static_xsid",
+  });
 });

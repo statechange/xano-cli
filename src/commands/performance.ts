@@ -20,6 +20,13 @@ import {
   type StackAggregate,
   type StackNode,
 } from "../performance/stack-rollup.js";
+import {
+  buildFunctionIdentityResolver,
+  buildStructuralBreakdown,
+  collectTraceIssues,
+  collectTraceFunctions,
+  resolveTraceTarget,
+} from "../performance/trace-analysis.js";
 
 export function createPerformanceCommand(
   program: Command,
@@ -378,14 +385,27 @@ export function createPerformanceCommand(
       try {
         const log = format === "table" ? console.log.bind(console) : console.error.bind(console);
 
-        // Build function name map
+        // Build function name map and static identity sources. Runtime request
+        // payloads frequently omit raw.context.function.id.
         const functionMap = new Map<number, string>();
+        let functions: any[] = [];
         if (workspace) {
           try {
-            const { functions } = await client.getFunctions(workspace, branchId);
+            ({ functions } = await client.getFunctions(workspace, branchId));
             for (const f of functions) functionMap.set(f.id, f.name);
           } catch { /* non-fatal */ }
         }
+        const { target, source: targetSource } = await resolveTraceTarget(
+          client,
+          workspace,
+          branchId,
+          type as "endpoint" | "task" | "trigger",
+          objectId,
+        );
+        const resolveFunctionIdentity = buildFunctionIdentityResolver(
+          [targetSource, ...functions].filter(Boolean),
+          functionMap,
+        );
 
         // Fetch history items
         log(`Fetching ${type} ${objectId} history (up to ${maxSamples} samples)...`);
@@ -417,13 +437,8 @@ export function createPerformanceCommand(
         // Fetch full request details for each sample
         const durations: number[] = [];
         const aggregateByXsid = new Map<string, StackAggregate>();
+        const trees: StackNode[][] = [];
 
-        const allFunctionCalls = new Map<number, {
-          name?: string;
-          count: number;
-          retainedStackNodes: number;
-          totalSecs: number;
-        }>();
         let truncatedSamples = 0;
 
         for (const item of samples) {
@@ -446,27 +461,16 @@ export function createPerformanceCommand(
             undefined,
             "",
             functionMap,
-            { suppressWarnings: type === "task" },
+            {
+              suppressWarnings: type === "task",
+              resolveFunctionIdentity: (step) => resolveFunctionIdentity(step, detail.created_at),
+            },
           );
+          trees.push(tree);
 
           // Aggregate by _xsid
           aggregateStackNodes(tree, aggregateByXsid);
 
-          // Collect function calls
-          const fcs = collectFunctionCalls(tree);
-          for (const fc of fcs) {
-            const existing = allFunctionCalls.get(fc.id) || {
-              name: fc.name,
-              count: 0,
-              retainedStackNodes: 0,
-              totalSecs: 0,
-            };
-            existing.count += fc.call_count;
-            existing.retainedStackNodes += fc.retained_stack_nodes;
-            existing.totalSecs += fc.total_seconds;
-            if (fc.name) existing.name = fc.name;
-            allFunctionCalls.set(fc.id, existing);
-          }
         }
 
         durations.sort((a, b) => a - b);
@@ -498,21 +502,35 @@ export function createPerformanceCommand(
           }))
           .sort((a, b) => b.total_rollup_seconds - a.total_rollup_seconds);
 
-        const funcSummary = Array.from(allFunctionCalls.entries())
-          .map(([fid, info]) => ({
-            id: fid,
-            name: info.name,
-            total_calls: info.count,
-            calls_complete: truncatedSamples === 0,
-            retained_stack_nodes: info.retainedStackNodes,
-            avg_calls_per_request: +(info.count / samples.length).toFixed(1),
-            total_seconds: +info.totalSecs.toFixed(4),
-            avg_seconds_per_call: info.count > 0 ? +(info.totalSecs / info.count).toFixed(4) : 0,
+        const funcSummary = collectTraceFunctions(
+          trees,
+          samples.length,
+          durations.reduce((sum, duration) => sum + duration, 0),
+          truncatedSamples === 0,
+          target,
+        );
+        const totalRequestSeconds = durations.reduce((sum, duration) => sum + duration, 0);
+        const ancestry = buildStructuralBreakdown(trees, samples.length, totalRequestSeconds);
+        const issues = collectTraceIssues(trees);
+
+        const hotspots = stepBreakdown
+          .map((step) => ({
+            ...step,
+            total_direct_seconds: +(
+              (aggregateByXsid.get(step._xsid)?.total_direct_seconds ?? 0)
+            ).toFixed(4),
+            pct_of_total: totalRequestSeconds > 0
+              ? +(((aggregateByXsid.get(step._xsid)?.total_direct_seconds ?? 0) / totalRequestSeconds) * 100).toFixed(1)
+              : 0,
+            avg_invocations_per_request: +(step.occurrences / samples.length).toFixed(2),
+            ...(step.iterations_total
+              ? { avg_iterations_per_request: +(step.iterations_total / samples.length).toFixed(2) }
+              : {}),
           }))
-          .sort((a, b) => b.total_seconds - a.total_seconds);
+          .sort((a, b) => b.total_direct_seconds - a.total_direct_seconds);
 
         const output = {
-          target: { type, id: objectId },
+          target,
           samples: samples.length,
           truncated_samples: truncatedSamples,
           complete_samples: samples.length - truncatedSamples,
@@ -522,25 +540,35 @@ export function createPerformanceCommand(
             p95_seconds: +p95.toFixed(4),
             p99_seconds: +p99.toFixed(4),
           },
-          step_breakdown: stepBreakdown.slice(0, 30),
-          functions_called: funcSummary.length > 0 ? funcSummary : undefined,
+          ancestry,
+          hotspots: hotspots.slice(0, 30),
+          functions_called: funcSummary,
+          issues,
         };
 
         if (outputFormatted(format, output)) return;
 
         // Table format
-        console.log(`\nTrace: ${type} ${objectId} (${samples.length} samples)\n`);
+        console.log(`\nTrace: ${type} ${target.name || "(metadata unresolved)"} (ID: ${objectId}, ${samples.length} samples)\n`);
+        if (target.description) console.log(`  ${target.description}\n`);
         console.log(`  Avg duration: ${avgDuration.toFixed(4)}s  |  p50: ${p50.toFixed(4)}s  |  p95: ${p95.toFixed(4)}s\n`);
         if (truncatedSamples > 0) {
           console.log(`  ⚠ ${truncatedSamples}/${samples.length} stacks truncated; occurrence and call counts are retained lower bounds\n`);
         }
-        console.log(`Top steps by total time:\n`);
-        for (const step of stepBreakdown.slice(0, 20)) {
+        console.log(`Structural ancestry:\n`);
+        for (const step of ancestry.slice(0, 30)) {
+          const label = step.title || step.name;
+          console.log(`  ${"  ".repeat(step.depth)}${label}`);
+          console.log(`    exclusive: ${step.avg_direct_seconds}s avg  inclusive: ${step.avg_rollup_seconds}s avg  ${step.pct_of_total}% of request`);
+        }
+
+        console.log(`\nHotspots by exclusive time:\n`);
+        for (const step of hotspots.slice(0, 20)) {
           const label = step.title || step.name;
           const fnLabel = step.function_name ? ` → ${step.function_name}` : "";
           const countLabel = step.occurrences_complete ? "occurrences" : "retained occurrences";
           console.log(`  ${label}${fnLabel}`);
-          console.log(`    avg_direct: ${step.avg_direct_seconds}s  avg_rollup: ${step.avg_rollup_seconds}s  total: ${step.total_rollup_seconds}s  (${step.occurrences} ${countLabel})`);
+          console.log(`    exclusive: ${step.total_direct_seconds}s (${step.pct_of_total}% of request)  inclusive: ${step.total_rollup_seconds}s  (${step.occurrences} ${countLabel})`);
           if (step.iterations_total) {
             console.log(`    iterations: ${step.iterations_total} total (${step.avg_iterations_per_occurrence} avg/runtime node)`);
           }
@@ -552,8 +580,20 @@ export function createPerformanceCommand(
         if (funcSummary.length > 0) {
           console.log(`\nFunctions called:\n`);
           for (const fc of funcSummary) {
-            const name = fc.name || `Function ${fc.id}`;
-            console.log(`  ${name} (ID: ${fc.id}) — ${fc.avg_calls_per_request} calls/req, ${fc.avg_seconds_per_call}s/call, ${fc.total_seconds}s total`);
+            const name = fc.identity.status === "resolved"
+              ? (fc.identity.name || `Function ${fc.identity.id}`)
+              : (fc.identity.runtime_title || "Unresolved function");
+            const id = fc.identity.status === "resolved" ? ` (ID: ${fc.identity.id})` : " (identity unresolved)";
+            console.log(`  ${name}${id} — ${fc.calls_per_request} calls/req, ${fc.seconds_per_call}s/call, ${fc.pct_of_total_request_time}% of request time`);
+          }
+        }
+
+        if (issues.length > 0) {
+          console.log(`\nActionable issues:\n`);
+          for (const issue of issues) {
+            console.log(`  [${issue.severity}] ${issue.message}`);
+            console.log(`    Path: ${issue.evidence.path.join(" > ")}`);
+            console.log(`    Suggestion: ${issue.suggestion}`);
           }
         }
       } catch (error: any) {

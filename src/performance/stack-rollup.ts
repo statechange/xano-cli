@@ -4,6 +4,8 @@
  * redesigned for CLI tree output rather than flat xsid-keyed aggregation.
  */
 
+import type { FunctionIdentity } from "./trace-analysis.js";
+
 export interface StackNode {
   position: string;
   name: string;
@@ -21,6 +23,7 @@ export interface StackNode {
   iterations?: number;
   function_id?: number;
   function_name?: string;
+  function_identity?: FunctionIdentity;
   warning?: string;
   children: StackNode[];
 }
@@ -68,6 +71,7 @@ const IGNORE_PERFORMANCE_MARKER = "#ignore-performance";
 export interface WalkStackOptions {
   /** Suppress runtime warnings for sources such as tasks that opt out globally. */
   suppressWarnings?: boolean;
+  resolveFunctionIdentity?: (step: any) => FunctionIdentity | undefined;
 }
 
 /**
@@ -141,11 +145,18 @@ export function walkStack(
       node.iterations = step.cnt;
     }
 
-    // Resolve function references
-    if (step.name === "mvp:function" && step.raw?.context?.function?.id) {
-      node.function_id = step.raw.context.function.id;
-      if (functionMap?.has(node.function_id!)) {
-        node.function_name = functionMap.get(node.function_id!);
+    // Resolve function references from runtime metadata or an authoritative
+    // static resolver supplied by trace analysis.
+    if (step.name === "mvp:function") {
+      node.function_identity = options.resolveFunctionIdentity?.(step);
+      const resolvedId = node.function_identity?.status === "resolved"
+        ? node.function_identity.id
+        : step.raw?.context?.function?.id;
+      if (resolvedId) {
+        node.function_id = resolvedId;
+        node.function_name = node.function_identity?.status === "resolved"
+          ? node.function_identity.name
+          : functionMap?.get(resolvedId);
       }
     }
 
