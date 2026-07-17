@@ -1,7 +1,8 @@
 # Releasing `@statechange/xano-cli`
 
 Releases publish from GitHub Actions through npm trusted publishing. The workflow uses a short-lived
-OpenID Connect identity; it must not receive an npm token or a `NODE_AUTH_TOKEN` secret.
+OpenID Connect identity; it must not receive an npm token or a `NODE_AUTH_TOKEN` secret. It relies on
+npm's default public registry rather than generating a token-placeholder `.npmrc`.
 
 ## One-time npm setup
 
