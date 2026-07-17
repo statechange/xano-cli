@@ -304,6 +304,12 @@ These flags work on most commands but are usually auto-resolved:
 
 Use `--format yaml` when feeding output to an AI/LLM — it is the most token-efficient structured format.
 
+## Releasing
+
+Maintainers publish deliberate GitHub Releases through npm trusted publishing; no long-lived npm
+write token is stored in GitHub. See [the release runbook](docs/RELEASING.md) for versioning, the
+one-time npm binding, publication checks, and recovery.
+
 ## License
 
 MIT
