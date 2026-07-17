@@ -34,7 +34,8 @@ The workflow must already exist on the default branch before saving this relatio
 Publication fails before the publish step when the release tag does not exactly equal the `v`-prefixed
 `package.json` version, when that version already exists in the registry, or when the packed artifact
 omits the README, bundled skills, or CLI entry point. Tests and a clean TypeScript build also gate
-publication.
+publication. The release commit must be contained in the repository's default branch, and the exact
+tarball that passes inspection is the one sent to npm.
 
 After the first OIDC release succeeds, remove any obsolete npm automation secret from GitHub and
 revoke its token on npm. npm recommends setting package publishing access to require two-factor
