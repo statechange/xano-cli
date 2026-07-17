@@ -18,13 +18,14 @@ import { createXanoScriptCommand } from "./commands/xanoscript.js";
 import { createLogsCommand } from "./commands/logs.js";
 import { createDocsCommand } from "./commands/docs.js";
 import { flushSinkCache } from "./xano-client.js";
+import { packageVersion } from "./version.js";
 
 const program = new Command();
 
 program
   .name("sc-xano")
   .description("StateChange CLI for Xano - performance analysis, operational insights, and critical security and restart abilities")
-  .version("0.4.2");
+  .version(packageVersion);
 
 // Add subcommands
 createAuthCommand(program);

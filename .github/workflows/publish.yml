@@ -113,6 +113,16 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify built CLI version
+        run: |
+          expected="$(node -p 'require("./package.json").version')"
+          actual="$(node dist/index.js --version)"
+          if [ "$actual" != "$expected" ]; then
+            echo "Built CLI reports $actual; package.json declares $expected." >&2
+            exit 1
+          fi
+          echo "Built CLI version verified: $actual"
+
       - name: Inspect the package payload
         id: pack
         run: |
