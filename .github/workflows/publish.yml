@@ -50,14 +50,21 @@ jobs:
 
       - name: Verify release identity
         env:
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           node <<'NODE'
           const { name, version } = require("./package.json");
           const packageLock = require("./package-lock.json");
+          const isPrerelease = process.env.IS_PRERELEASE;
           const releaseTag = process.env.RELEASE_TAG;
           const expectedTag = `v${version}`;
 
+          if (isPrerelease !== "false" || version.includes("-")) {
+            throw new Error(
+              "Prereleases are not supported because this workflow publishes to npm's latest dist-tag.",
+            );
+          }
           if (
             packageLock.name !== name ||
             packageLock.version !== version ||
