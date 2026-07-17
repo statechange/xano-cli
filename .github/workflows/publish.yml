@@ -1,0 +1,151 @@
+name: Publish Package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the released tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Verify the release commit is on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch --no-tags origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+          if ! git merge-base --is-ancestor HEAD "origin/${DEFAULT_BRANCH}"; then
+            echo "Release commit is not contained in origin/${DEFAULT_BRANCH}." >&2
+            exit 1
+          fi
+
+      - name: Install an OIDC-capable npm CLI
+        run: |
+          npm install --global npm@11.5.1
+          npm --version
+
+      - name: Verify release identity
+        env:
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          node <<'NODE'
+          const { name, version } = require("./package.json");
+          const packageLock = require("./package-lock.json");
+          const isPrerelease = process.env.IS_PRERELEASE;
+          const releaseTag = process.env.RELEASE_TAG;
+          const expectedTag = `v${version}`;
+
+          if (isPrerelease !== "false" || version.includes("-")) {
+            throw new Error(
+              "Prereleases are not supported because this workflow publishes to npm's latest dist-tag.",
+            );
+          }
+          if (
+            packageLock.name !== name ||
+            packageLock.version !== version ||
+            packageLock.packages?.[""]?.version !== version
+          ) {
+            throw new Error("package-lock.json identity does not match package.json.");
+          }
+          if (releaseTag !== expectedTag) {
+            throw new Error(
+              `Release tag ${JSON.stringify(releaseTag)} does not match ${JSON.stringify(expectedTag)} for ${name}@${version}.`,
+            );
+          }
+
+          console.log(`Release identity verified: ${name}@${version} (${releaseTag})`);
+          NODE
+
+      - name: Refuse an existing registry version
+        run: |
+          node <<'NODE'
+          const { name, version } = require("./package.json");
+          async function verifyVersionIsAvailable() {
+            const url = `https://registry.npmjs.org/${encodeURIComponent(name)}/${encodeURIComponent(version)}`;
+            const response = await fetch(url, { redirect: "error" });
+
+            if (response.status === 200) {
+              throw new Error(`${name}@${version} already exists in the npm registry.`);
+            }
+            if (response.status !== 404) {
+              throw new Error(`npm registry lookup failed with HTTP ${response.status}.`);
+            }
+
+            console.log(`Registry version is available: ${name}@${version}`);
+          }
+
+          verifyVersionIsAvailable().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Inspect the package payload
+        id: pack
+        run: |
+          npm pack --json > "$RUNNER_TEMP/npm-pack.json"
+          node - "$RUNNER_TEMP/npm-pack.json" <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const { name, version, bin } = require("./package.json");
+          const [pack] = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+
+          if (!pack || pack.name !== name || pack.version !== version) {
+            throw new Error("Packed package identity does not match package.json.");
+          }
+
+          const files = new Set(pack.files.map(({ path }) => path));
+          const requiredFiles = [
+            "README.md",
+            "skills/performance-analysis/SKILL.md",
+            "skills/xano-cli/SKILL.md",
+            ...Object.values(bin).map((path) => path.replace(/^\.\//, "")),
+          ];
+          const missingFiles = requiredFiles.filter((path) => !files.has(path));
+          if (missingFiles.length > 0) {
+            throw new Error(`Packed package is missing: ${missingFiles.join(", ")}`);
+          }
+
+          console.log(
+            `Package payload verified: ${pack.filename} (${pack.entryCount} files, ${pack.size} bytes)`,
+          );
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `tarball=${path.resolve(pack.filename)}\n`);
+          NODE
+
+      # npm exchanges GitHub's OIDC identity for a short-lived publish token.
+      # Deliberately do not set NODE_AUTH_TOKEN or use an npm automation secret.
+      - name: Publish to npm
+        run: npm publish "${{ steps.pack.outputs.tarball }}" --access public --ignore-scripts

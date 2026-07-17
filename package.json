@@ -37,6 +37,9 @@
   "bugs": {
     "url": "https://github.com/statechange/xano-cli/issues"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "dependencies": {
     "@statechange/xano-xray": "^0.1.0",
