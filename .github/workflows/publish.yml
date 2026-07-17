@@ -159,3 +159,102 @@ jobs:
       # Deliberately do not set NODE_AUTH_TOKEN or use an npm automation secret.
       - name: Publish to npm
         run: npm publish "${{ steps.pack.outputs.tarball }}" --access public --ignore-scripts
+
+      - name: Verify registry metadata and provenance
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          node <<'NODE'
+          const { name, version } = require("./package.json");
+          const expectedRepository = "https://github.com/statechange/xano-cli";
+          const expectedWorkflow = ".github/workflows/publish.yml";
+          const expectedRef = `refs/tags/${process.env.RELEASE_TAG}`;
+          const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+          async function fetchJson(url) {
+            const response = await fetch(url, { redirect: "error" });
+            if (!response.ok) {
+              throw new Error(`${url} returned HTTP ${response.status}.`);
+            }
+            return response.json();
+          }
+
+          async function waitForPublishedMetadata() {
+            const packageUrl = `https://registry.npmjs.org/${encodeURIComponent(name)}`;
+            let lastError;
+            for (let attempt = 1; attempt <= 12; attempt += 1) {
+              try {
+                const metadata = await fetchJson(packageUrl);
+                const published = metadata.versions?.[version];
+                if (
+                  metadata["dist-tags"]?.latest === version &&
+                  published?.dist?.integrity &&
+                  published?.dist?.attestations?.url
+                ) {
+                  return published;
+                }
+                lastError = new Error(`${name}@${version} is not fully visible in the registry yet.`);
+              } catch (error) {
+                lastError = error;
+              }
+              console.log(`Registry verification attempt ${attempt}/12 is not ready; retrying in 10s.`);
+              await delay(10_000);
+            }
+            throw lastError;
+          }
+
+          async function verifyPublication() {
+            const published = await waitForPublishedMetadata();
+            const integrity = published.dist.integrity;
+            const [algorithm, encodedDigest] = integrity.split("-", 2);
+            if (algorithm !== "sha512" || !encodedDigest) {
+              throw new Error(`Unexpected registry integrity: ${JSON.stringify(integrity)}.`);
+            }
+            const expectedDigest = Buffer.from(encodedDigest, "base64").toString("hex");
+
+            const attestationDocument = await fetchJson(published.dist.attestations.url);
+            const provenance = attestationDocument.attestations?.find(
+              ({ predicateType }) => predicateType === "https://slsa.dev/provenance/v1",
+            );
+            if (!provenance?.bundle?.dsseEnvelope?.payload) {
+              throw new Error("The registry has no SLSA provenance attestation for this release.");
+            }
+            const statement = JSON.parse(
+              Buffer.from(provenance.bundle.dsseEnvelope.payload, "base64").toString("utf8"),
+            );
+            const workflow = statement.predicate?.buildDefinition?.externalParameters?.workflow;
+            const invocationId = statement.predicate?.runDetails?.metadata?.invocationId;
+            const subjectDigest = statement.subject?.[0]?.digest?.sha512;
+
+            if (
+              workflow?.repository !== expectedRepository ||
+              workflow?.path !== expectedWorkflow ||
+              workflow?.ref !== expectedRef ||
+              !invocationId?.startsWith(`${expectedRepository}/actions/runs/`) ||
+              subjectDigest !== expectedDigest
+            ) {
+              throw new Error("Published provenance does not match this repository, workflow, tag, run, and artifact.");
+            }
+
+            console.log(`Registry and provenance verified: ${name}@${version} (${integrity})`);
+            console.log(`Provenance invocation: ${invocationId}`);
+          }
+
+          verifyPublication().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
+
+      - name: Verify a clean registry install
+        run: |
+          package="$(node -p 'const { name, version } = require("./package.json"); name + "@" + version')"
+          expected="$(node -p 'require("./package.json").version')"
+          clean_dir="$(mktemp -d)"
+          cd "$clean_dir"
+          actual="$(npm exec --yes --package="$package" -- sc-xano --version)"
+          if [ "$actual" != "$expected" ]; then
+            echo "Registry-installed CLI reports $actual; expected $expected." >&2
+            exit 1
+          fi
+          echo "Clean registry install verified: $package reports $actual"
